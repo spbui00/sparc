@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from sparc import SPARCEvaluator, AverageTemplateSubtraction
+from sparc import Evaluator, AverageTemplateSubtraction
 from tqdm import tqdm
 from scipy import signal as sp_signal
 
@@ -171,7 +171,7 @@ def demonstrate_swec_ethz_template_subtraction():
         ),
     }
     
-    evaluator = SPARCEvaluator(sampling_rate)
+    evaluator = Evaluator(sampling_rate)
     
     results = {}
     cleaned_signals = {}

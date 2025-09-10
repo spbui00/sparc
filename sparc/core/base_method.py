@@ -9,7 +9,7 @@ class BaseSACMethod(ABC):
     All SAC methods should inherit from this class and implement the required methods.
     """
     
-    def __init__(self, sampling_rate: float, **kwargs):
+    def __init__(self, sampling_rate: Optional[float] = None, **kwargs):
         """
         Initialize the SAC method.
         
@@ -20,6 +20,11 @@ class BaseSACMethod(ABC):
         self.sampling_rate = sampling_rate
         self.params = kwargs
         self.is_fitted = False
+
+    def set_sampling_rate(self, sampling_rate: float):
+        """Set the sampling rate."""
+        self.sampling_rate = sampling_rate
+        return self
         
     @abstractmethod
     def fit(self, data: np.ndarray, artifact_indices: Optional[np.ndarray] = None) -> 'BaseSACMethod':

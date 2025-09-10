@@ -5,8 +5,6 @@ from .core.neural_analyzer import NeuralAnalyzer
 from .methods.template_subtraction import (
     BaseTemplateSubtraction,
     AverageTemplateSubtraction,
-    TrialTemplateSubtraction, 
-    DictionaryTemplateSubtraction,
 )
 
 __version__ = "0.0.1"
@@ -17,6 +15,4 @@ __all__ = [
     "NeuralAnalyzer",
     "BaseTemplateSubtraction",
     "AverageTemplateSubtraction",
-    "TrialTemplateSubtraction", 
-    "DictionaryTemplateSubtraction",
 ]

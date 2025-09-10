@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 import numpy as np
 
 @dataclass
@@ -10,5 +11,6 @@ class SignalData:
 @dataclass
 class SignalDataWithGroundTruth(SignalData):
     """Represents signal data with ground truth for evaluation."""
-    ground_truth_spikes: np.ndarray
+    ground_truth: np.ndarray
     artifacts: np.ndarray
+    artifact_indices: Optional[np.ndarray] = None

@@ -1,209 +1,323 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.io as sio
-from sparc import TemplateSubtractionMethod, SPARCEvaluator
+import scipy.io
+from sparc import AverageTemplateSubtraction
+from tqdm import tqdm
 
-def load_eraasr_data(data_path='../research/datasets/eraasr-1.0.0/exampleDataTensor.mat'):
+
+def load_eraasr_data(data_path='research/datasets/eraasr-1.0.0/exampleDataTensor.mat'):
     try:
-        mat_data = sio.loadmat(data_path)
-        data = mat_data['data_trials_by_time_by_channels']
+        data = scipy.io.loadmat(data_path)
         
-        sampling_rate = 30000
+        # Extract the main data array: (trials, timesteps, channels)
+        mixed_data = data['data_trials_by_time_by_channels']
+        n_trials, n_timesteps, n_channels = mixed_data.shape
+        
+        sampling_rate = 30000  # 30 kHz
+        stim_onset_sample = 1500  # ~50ms in (1500 samples)
+        stim_duration_samples = int(60 * sampling_rate / 1000)  # 60ms duration
+        pulse_spacing_samples = int(3 * sampling_rate / 1000)  # 3ms between pulses
+        n_pulses = 20
+        
+        # Calculate stimulation window
+        stim_start = stim_onset_sample
+        stim_end = stim_start + stim_duration_samples
         
         print(f"Loaded ERAASR data:")
-        print(f"  Shape: {data.shape}")
+        print(f"  Shape: {mixed_data.shape}")
         print(f"  Sampling rate: {sampling_rate} Hz")
-        print(f"  Duration per trial: {data.shape[1] / sampling_rate * 1000:.1f} ms")
-        print(f"  Trials: {data.shape[0]}, Channels: {data.shape[2]}")
+        print(f"  Duration per trial: {n_timesteps / sampling_rate * 1000:.1f} ms")
+        print(f"  Trials: {n_trials}, Channels: {n_channels}")
+        print(f"  Stim onset: sample {stim_start} ({stim_start/sampling_rate*1000:.1f} ms)")
+        print(f"  Stim end: sample {stim_end} ({stim_end/sampling_rate*1000:.1f} ms)")
+        print(f"  Stim duration: {stim_duration_samples} samples ({stim_duration_samples/sampling_rate*1000:.1f} ms)")
+        print(f"  Time range: -50ms to +200ms relative to stim onset")
         
-        return data, sampling_rate
+        return mixed_data, sampling_rate, stim_start, stim_end
         
     except FileNotFoundError:
-        print(f"Data file not found at {data_path}")
-        print("Please ensure the ERAASR data is available")
-        return None, None
+        print(f"ERAASR data file not found at {data_path}")
+        return None, None, None, None
     except Exception as e:
-        print(f"Error loading data: {str(e)}")
-        return None, None
+        print(f"Error loading ERAASR data: {str(e)}")
+        return None, None, None, None
 
-def create_synthetic_ground_truth(data_shape, sampling_rate):
-    n_trials, n_samples, n_channels = data_shape
-    t = np.linspace(0, n_samples / sampling_rate, n_samples)
-    
-    ground_truth = np.zeros(data_shape)
+
+def create_artifact_indices(data_shape, stim_start, stim_end):
+    n_trials, n_timesteps, n_channels = data_shape
+    artifact_indices = []
     
     for trial in range(n_trials):
-        for ch in range(n_channels):
-            freq = 10 + ch * 5  # Different frequencies per channel
-            ground_truth[trial, :, ch] = (
-                np.sin(2 * np.pi * freq * t) +  # Main oscillation
-                0.5 * np.sin(2 * np.pi * freq * 2 * t) +  # Harmonic
-                0.3 * np.random.randn(n_samples)  # Noise
-            )
+        trial_mask = np.zeros((n_timesteps, n_channels), dtype=bool)
+        trial_mask[stim_start:stim_end, :] = True
+        artifact_indices.append(trial_mask)
     
-    return ground_truth
+    return artifact_indices
+
 
 def demonstrate_eraasr_template_subtraction():
-    data, sampling_rate = load_eraasr_data()    
-    if data is None:
-        raise ValueError("Could not load ERAASR data")
+    """Demonstrate template subtraction on ERAASR dataset"""
     
-    ground_truth = create_synthetic_ground_truth(data.shape, sampling_rate)
+    # Load ERAASR data
+    mixed_data, sampling_rate, stim_start, stim_end = load_eraasr_data()
     
-    assert sampling_rate is not None
+    if mixed_data is None:
+        print("Could not load ERAASR data. Please ensure the dataset is available.")
+        return None, None
+    
+    # Create artifact indices for known stimulation periods
+    artifact_indices = create_artifact_indices(mixed_data.shape, stim_start, stim_end)
+    
+    print(f"\nArtifact regions:")
+    print(f"  Stimulation period: samples {stim_start}-{stim_end}")
+    print(f"  Artifact percentage: {np.mean([np.mean(mask) for mask in artifact_indices]) * 100:.1f}%")
+    
     methods = {
-        'Simple Average': TemplateSubtractionMethod(
+        '2ms': AverageTemplateSubtraction(
             sampling_rate=sampling_rate,
-            method='simple',
-            template_length_ms=90,  # 3ms at 30kHz
-        ),
-        'Channel Average': TemplateSubtractionMethod(
-            sampling_rate=sampling_rate,
-            method='average',
-            template_length_ms=90
-        ),
-        'Trial Specific': TemplateSubtractionMethod(
-            sampling_rate=sampling_rate,
-            method='trial',
-            template_length_ms=90
-        ),
-        'Dictionary Learning': TemplateSubtractionMethod(
-            sampling_rate=sampling_rate,
-            method='dictionary',
-            template_length_ms=90,
-            distance_metric='correlation',
-            min_cluster_size=2
+            template_length_ms=2,
+            num_templates_for_avg=5
         )
     }
     
-    evaluator = SPARCEvaluator(sampling_rate)
-    
-    results = {}
     cleaned_signals = {}
+    
+    print(f"\n=== Testing Template Subtraction Methods on ERAASR ===")
     
     for method_name, method in methods.items():
         print(f"\n--- Testing {method_name} ---")
         
         try:
-            cleaned = method.fit_transform(data)
+            # Fit the method
+            print("  Fitting method...")
+            method.fit(mixed_data)
+            
+            # Transform the data
+            print("  Applying artifact removal...")
+            cleaned = method.transform(mixed_data)
             cleaned_signals[method_name] = cleaned
             
-            metrics = evaluator.evaluate_method_comprehensive(
-                ground_truth[0], data[0], cleaned[0], method_name
-            )
-            results[method_name] = metrics
+            # Calculate some basic statistics
+            original_power = np.mean(mixed_data ** 2)
+            cleaned_power = np.mean(cleaned ** 2)
+            power_reduction = (original_power - cleaned_power) / original_power * 100
+            
+            # Calculate artifact region statistics
+            stim_region_original = mixed_data[:, stim_start:stim_end, :]
+            stim_region_cleaned = cleaned[:, stim_start:stim_end, :]
+            
+            stim_power_original = np.mean(stim_region_original ** 2)
+            stim_power_cleaned = np.mean(stim_region_cleaned ** 2)
+            stim_power_reduction = (stim_power_original - stim_power_cleaned) / stim_power_original * 100
             
             print(f"✓ {method_name} completed successfully")
-            print(f"  MSE: {metrics['mse']:.6f}")
-            print(f"  SNR Improvement: {metrics['snr_improvement_db']:.2f} dB")
-            print(f"  Artifact Removal Ratio: {metrics['artifact_removal_ratio']:.4f}")
-            print(f"  Hit Rate: {metrics['hit_rate_mean']:.4f}")
-            print(f"  Miss Rate: {metrics['miss_rate_mean']:.4f}")
-            print(f"  False Positive Rate: {metrics['false_positive_rate_mean']:.4f}")
+            print(f"  Overall power reduction: {power_reduction:.1f}%")
+            print(f"  Stimulation region power reduction: {stim_power_reduction:.1f}%")
+            print(f"  Max amplitude reduction: {(np.max(np.abs(mixed_data)) - np.max(np.abs(cleaned))) / np.max(np.abs(mixed_data)) * 100:.1f}%")
             
         except Exception as e:
             print(f"✗ {method_name} failed: {str(e)}")
             continue
     
-    return results, cleaned_signals, data, ground_truth
+    return cleaned_signals, mixed_data, sampling_rate, stim_start, stim_end
 
-def plot_eraasr_results(data, ground_truth, cleaned_signals, trial_idx=0, channel=0):
-    """Plot results for ERAASR data."""
-    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-    fig.suptitle(f'ERAASR Template Subtraction Results (Trial {trial_idx}, Channel {channel})', fontsize=16)
+
+def plot_eraasr_results(mixed_data, cleaned_signals, sampling_rate, stim_start, stim_end,
+                       trial_idx=0, channel=0, zoom_ms=50):
+    """Plot ERAASR template subtraction results"""
     
-    # Time axis
-    sampling_rate = 30000
-    time_ms = np.arange(data.shape[1]) / sampling_rate * 1000
+    if mixed_data is None or not cleaned_signals:
+        print("No data or results to plot")
+        return
     
-    # Plot original and ground truth
-    axes[0, 0].plot(time_ms, data[trial_idx, :, channel], 'r-', alpha=0.7, label='Original (with artifacts)')
-    axes[0, 0].plot(time_ms, ground_truth[trial_idx, :, channel], 'b-', label='Synthetic Ground Truth')
-    axes[0, 0].set_title('Original Signal')
-    axes[0, 0].set_xlabel('Time (ms)')
-    axes[0, 0].set_ylabel('Amplitude')
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
+    # Create time vector
+    n_timesteps = mixed_data.shape[1]
+    time_ms = np.arange(n_timesteps) / sampling_rate * 1000 - 50  # Relative to stim onset
     
-    # Plot different methods
-    method_names = list(cleaned_signals.keys())
-    colors = ['green', 'orange', 'purple']
+    # Find an active channel if the specified one is inactive
+    if not np.any(mixed_data[trial_idx, :, channel]):
+        print(f"Warning: Channel {channel} appears to be inactive. Finding active channel...")
+        for ch in range(mixed_data.shape[2]):
+            if np.any(mixed_data[trial_idx, :, ch]):
+                channel = ch
+                print(f"Using channel {channel}")
+                break
+    
+    # Determine zoom window
+    stim_onset_ms = stim_start / sampling_rate * 1000 - 50  # Relative to stim onset (should be ~0)
+    zoom_start_ms = stim_onset_ms - zoom_ms/2
+    zoom_end_ms = stim_onset_ms + zoom_ms/2
+    
+    zoom_mask = (time_ms >= zoom_start_ms) & (time_ms <= zoom_end_ms)
+    
+    # Create plots
+    n_methods = len(cleaned_signals)
+    fig, axes = plt.subplots(n_methods + 1, 2, figsize=(15, 4 * (n_methods + 1)))
+    
+    if n_methods == 0:
+        return
+    
+    fig.suptitle(f'ERAASR Template Subtraction Results\n(Trial {trial_idx}, Channel {channel})', fontsize=16)
+    
+    # Plot 1: Original signal (full and zoomed)
+    ax_full, ax_zoom = axes[0]
+    
+    # Full view
+    ax_full.plot(time_ms, mixed_data[trial_idx, :, channel], 'b-', alpha=0.7, linewidth=0.5)
+    ax_full.axvspan(stim_start/sampling_rate*1000-50, stim_end/sampling_rate*1000-50, 
+                    alpha=0.2, color='red', label='Stimulation period')
+    ax_full.set_title('Original Signal (Full View)')
+    ax_full.set_ylabel('Amplitude (μV)')
+    ax_full.legend()
+    ax_full.grid(True, alpha=0.3)
+    
+    # Zoomed view
+    ax_zoom.plot(time_ms[zoom_mask], mixed_data[trial_idx, zoom_mask, channel], 'b-', alpha=0.7)
+    ax_zoom.axvspan(stim_start/sampling_rate*1000-50, stim_end/sampling_rate*1000-50, 
+                    alpha=0.2, color='red', label='Stimulation period')
+    ax_zoom.set_title(f'Original Signal (Zoomed: ±{zoom_ms/2:.0f}ms around stim)')
+    ax_zoom.set_ylabel('Amplitude (μV)')
+    ax_zoom.legend()
+    ax_zoom.grid(True, alpha=0.3)
+    
+    # Plot cleaned signals
+    colors = ['green', 'purple', 'orange', 'brown', 'pink']
     
     for i, (method_name, cleaned) in enumerate(cleaned_signals.items()):
-        if i < 3:  # Plot up to 3 methods
-            row, col = (i + 1) // 2, (i + 1) % 2
-            axes[row, col].plot(time_ms, data[trial_idx, :, channel], 'r-', alpha=0.3, label='Original')
-            axes[row, col].plot(time_ms, ground_truth[trial_idx, :, channel], 'b-', alpha=0.7, label='Ground Truth')
-            axes[row, col].plot(time_ms, cleaned[trial_idx, :, channel], color=colors[i], label=method_name)
-            axes[row, col].set_title(f'{method_name}')
-            axes[row, col].set_xlabel('Time (ms)')
-            axes[row, col].set_ylabel('Amplitude')
-            axes[row, col].legend()
-            axes[row, col].grid(True, alpha=0.3)
+        ax_full, ax_zoom = axes[i + 1]
+        color = colors[i % len(colors)]
+        
+        # Full view
+        ax_full.plot(time_ms, mixed_data[trial_idx, :, channel], 'b-', 
+                    alpha=0.3, linewidth=0.5, label='Original')
+        ax_full.plot(time_ms, cleaned[trial_idx, :, channel], 
+                    color=color, alpha=0.8, linewidth=0.5, label=f'Cleaned ({method_name})')
+        ax_full.axvspan(stim_start/sampling_rate*1000-50, stim_end/sampling_rate*1000-50, 
+                        alpha=0.2, color='red')
+        ax_full.set_title(f'After {method_name} (Full View)')
+        ax_full.set_ylabel('Amplitude (μV)')
+        ax_full.legend()
+        ax_full.grid(True, alpha=0.3)
+        
+        # Zoomed view
+        ax_zoom.plot(time_ms[zoom_mask], mixed_data[trial_idx, zoom_mask, channel], 
+                    'b-', alpha=0.3, label='Original')
+        ax_zoom.plot(time_ms[zoom_mask], cleaned[trial_idx, zoom_mask, channel], 
+                    color=color, alpha=0.8, label=f'Cleaned ({method_name})')
+        ax_zoom.axvspan(stim_start/sampling_rate*1000-50, stim_end/sampling_rate*1000-50, 
+                        alpha=0.2, color='red')
+        ax_zoom.set_title(f'After {method_name} (Zoomed)')
+        ax_zoom.set_ylabel('Amplitude (μV)')
+        ax_zoom.legend()
+        ax_zoom.grid(True, alpha=0.3)
+    
+    # Set x-axis labels
+    for ax in axes[-1]:
+        ax.set_xlabel('Time relative to stim onset (ms)')
     
     plt.tight_layout()
     plt.show()
 
-def analyze_artifact_regions(data, sampling_rate, trial_idx=0, channel=0):
-    print(f"\n=== Artifact Analysis (Trial {trial_idx}, Channel {channel}) ===")
+
+def analyze_artifact_removal(mixed_data, cleaned_signals, stim_start, stim_end):
+    """Analyze the effectiveness of artifact removal"""
     
-    signal = data[trial_idx, :, channel]
+    print(f"\n=== Artifact Removal Analysis ===")
     
-    # Find high-amplitude regions (potential artifacts)
-    threshold = np.std(signal) * 3
-    artifact_mask = np.abs(signal) > threshold
+    # Pre-stim, stim, and post-stim periods
+    pre_stim_end = stim_start
+    post_stim_start = stim_end
     
-    # Find artifact regions
-    artifact_starts = []
-    artifact_ends = []
-    in_artifact = False
+    pre_stim_data = mixed_data[:, :pre_stim_end, :]
+    stim_data = mixed_data[:, stim_start:stim_end, :]
+    post_stim_data = mixed_data[:, post_stim_start:, :]
     
-    for i, is_artifact in enumerate(artifact_mask):
-        if is_artifact and not in_artifact:
-            artifact_starts.append(i)
-            in_artifact = True
-        elif not is_artifact and in_artifact:
-            artifact_ends.append(i)
-            in_artifact = False
+    print(f"Analysis periods:")
+    print(f"  Pre-stim: samples 0-{pre_stim_end} ({pre_stim_end/30:.1f} ms)")
+    print(f"  Stim: samples {stim_start}-{stim_end} ({(stim_end-stim_start)/30:.1f} ms)")
+    print(f"  Post-stim: samples {post_stim_start}-end ({(mixed_data.shape[1]-post_stim_start)/30:.1f} ms)")
     
-    if in_artifact:
-        artifact_ends.append(len(artifact_mask))
-    
-    print(f"Found {len(artifact_starts)} artifact regions")
-    
-    for i, (start, end) in enumerate(zip(artifact_starts, artifact_ends)):
-        start_ms = start / sampling_rate * 1000
-        end_ms = end / sampling_rate * 1000
-        duration_ms = end_ms - start_ms
-        print(f"  Artifact {i+1}: {start_ms:.1f}ms - {end_ms:.1f}ms (duration: {duration_ms:.1f}ms)")
-    
-    return artifact_starts, artifact_ends
+    for method_name, cleaned in cleaned_signals.items():
+        print(f"\n--- {method_name} ---")
+        
+        # Calculate RMS in each period
+        pre_stim_rms_orig = np.sqrt(np.mean(pre_stim_data ** 2))
+        pre_stim_rms_clean = np.sqrt(np.mean(cleaned[:, :pre_stim_end, :] ** 2))
+        
+        stim_rms_orig = np.sqrt(np.mean(stim_data ** 2))
+        stim_rms_clean = np.sqrt(np.mean(cleaned[:, stim_start:stim_end, :] ** 2))
+        
+        post_stim_rms_orig = np.sqrt(np.mean(post_stim_data ** 2))
+        post_stim_rms_clean = np.sqrt(np.mean(cleaned[:, post_stim_start:, :] ** 2))
+        
+        print(f"  Pre-stim RMS: {pre_stim_rms_orig:.1f} → {pre_stim_rms_clean:.1f} μV "
+              f"({(pre_stim_rms_orig-pre_stim_rms_clean)/pre_stim_rms_orig*100:+.1f}%)")
+        print(f"  Stim RMS: {stim_rms_orig:.1f} → {stim_rms_clean:.1f} μV "
+              f"({(stim_rms_orig-stim_rms_clean)/stim_rms_orig*100:+.1f}%)")
+        print(f"  Post-stim RMS: {post_stim_rms_orig:.1f} → {post_stim_rms_clean:.1f} μV "
+              f"({(post_stim_rms_orig-post_stim_rms_clean)/post_stim_rms_orig*100:+.1f}%)")
+        
+        # Calculate peak-to-peak reduction in stim period
+        stim_p2p_orig = np.max(stim_data) - np.min(stim_data)
+        stim_p2p_clean = np.max(cleaned[:, stim_start:stim_end, :]) - np.min(cleaned[:, stim_start:stim_end, :])
+        
+        print(f"  Stim peak-to-peak: {stim_p2p_orig:.1f} → {stim_p2p_clean:.1f} μV "
+              f"({(stim_p2p_orig-stim_p2p_clean)/stim_p2p_orig*100:+.1f}%)")
+
 
 def main():
+    """Run ERAASR template subtraction demonstration"""
+    
     print("ERAASR Template Subtraction Demonstration")
     print("=" * 50)
     
-    results, cleaned_signals, data, ground_truth = demonstrate_eraasr_template_subtraction()
+    # Run the demonstration
+    cleaned_signals, mixed_data, sampling_rate, stim_start, stim_end = demonstrate_eraasr_template_subtraction()
     
-    if results:
-        sampling_rate = 30000
-        analyze_artifact_regions(data, sampling_rate)
+    if cleaned_signals and mixed_data is not None:
+        # Find an active channel for visualization
+        active_channel = 0
+        for ch in range(min(10, mixed_data.shape[2])):
+            if np.any(mixed_data[0, :, ch]):
+                active_channel = ch
+                break
+        
+        print(f"\nGenerating plots for channel {active_channel}...")
         
         # Plot results
-        print("\nGenerating comparison plots...")
-        plot_eraasr_results(data, ground_truth, cleaned_signals)
+        plot_eraasr_results(mixed_data, cleaned_signals, sampling_rate, 
+                           stim_start, stim_end, channel=active_channel)
+        
+        # Analyze artifact removal effectiveness
+        analyze_artifact_removal(mixed_data, cleaned_signals, stim_start, stim_end)
         
         # Summary
-        print("\n=== Summary ===")
-        best_method = min(results.keys(), key=lambda x: results[x]['mse'])
-        print(f"Best performing method: {best_method}")
-        print(f"Best MSE: {results[best_method]['mse']:.6f}")
-        print(f"Best SNR improvement: {results[best_method]['snr_improvement_db']:.2f} dB")
-        print(f"Best artifact removal ratio: {results[best_method]['artifact_removal_ratio']:.4f}")
-        print(f"Best LFP PSD Correlation: {results[best_method]['lfp_psd_correlation_mean']:.4f}")
-        print(f"Best Hit Rate: {results[best_method]['hit_rate_mean']:.4f}")
+        print(f"\n=== Summary ===")
+        print(f"Successfully tested {len(cleaned_signals)} template subtraction methods")
+        print(f"Dataset: {mixed_data.shape[0]} trials, {mixed_data.shape[2]} channels")
+        print(f"Stimulation period: {(stim_end-stim_start)/sampling_rate*1000:.1f} ms")
+        
+        if cleaned_signals:
+            # Find method with best stimulation period artifact reduction
+            best_method = None
+            best_reduction = 0
+            
+            for method_name, cleaned in cleaned_signals.items():
+                stim_power_orig = np.mean(mixed_data[:, stim_start:stim_end, :] ** 2)
+                stim_power_clean = np.mean(cleaned[:, stim_start:stim_end, :] ** 2)
+                reduction = (stim_power_orig - stim_power_clean) / stim_power_orig * 100
+                
+                if reduction > best_reduction:
+                    best_reduction = reduction
+                    best_method = method_name
+            
+            print(f"Best method: {best_method} ({best_reduction:.1f}% power reduction in stim period)")
     
-    return results, cleaned_signals
+    else:
+        print("Failed to load or process ERAASR data")
+    
+    return cleaned_signals, mixed_data
+
 
 if __name__ == "__main__":
-    results, cleaned_signals = main()
+    cleaned_signals, mixed_data = main()

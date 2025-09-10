@@ -106,7 +106,7 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
                 if silent_channels[ch]:  # Skip silent channels
                     continue
                 clip_artifact[ch, indices_sine] = -np.sin(2 * np.pi * f_pulse * time_artifact[indices_sine])
-                clip_artifact[ch, indices_exp] += -np.exp(-3000 * time_artifact[indices_exp]) - np.exp(-5000 * time_artifact[indices_exp])
+                clip_artifact[ch, indices_exp] += -np.exp(-3000 * (time_artifact[indices_exp]-start_time)) - np.exp(-5000 * (time_artifact[indices_exp]-start_time))
         
         # Scale by amplitude for each channel
         artifact[clip_idx] = clip_artifact * amplitudes[:, np.newaxis]
@@ -116,7 +116,7 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
 def generate_synthetic_artifacts(clean_data, sampling_rate, f_pulse=2500):
     sampling_rate_artifact = 6000  # Generate artifact at a higher sampling rate
     stimulation_channel = 0
-    stim_current_strength = 57
+    stim_current_strength = 57 # tune too small (40) -> amplitude similar to neural signal
 
     stim_rate = 200 
 

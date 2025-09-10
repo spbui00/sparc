@@ -114,12 +114,11 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
     return artifact
 
 def generate_synthetic_artifacts(clean_data, sampling_rate, f_pulse=2500):
-    sampling_rate_artifact = 2000  # Generate artifact at a higher sampling rate
+    sampling_rate_artifact = 6000  # Generate artifact at a higher sampling rate
     stimulation_channel = 0
     stim_current_strength = 57
 
-    # stim_rate = np.random.uniform(200, 300)
-    stim_rate = 200  # Fixed stimulation rate for consistency
+    stim_rate = 200 
 
     # Transpose clean_data to (trials, channels, timesteps) for artifact generation function
     clean_data_transposed = clean_data.transpose(0, 2, 1)

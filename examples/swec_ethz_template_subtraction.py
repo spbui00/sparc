@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import pickle
-from sparc import SPARCEvaluator, AverageTemplateSubtraction, TrialTemplateSubtraction, DictionaryTemplateSubtraction
+from sparc import SPARCEvaluator, AverageTemplateSubtraction
 from tqdm import tqdm
 from scipy import signal as sp_signal
 

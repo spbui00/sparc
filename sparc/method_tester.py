@@ -1,7 +1,7 @@
 from .core.base_method import BaseSACMethod
 from .core.evaluator import Evaluator
 from .core.signal_data import SignalDataWithGroundTruth
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -93,9 +93,114 @@ class MethodTester:
             ax = axes[i+1]
             ax.plot(self.data.raw_data[:, channel], label='Original', color='black', alpha=0.2)
             ax.plot(self.data.ground_truth[:, channel], label='Ground Truth', color='blue', alpha=0.3)
-            ax.plot(self.cleaned_signals[name][:, channel], label=f'Cleaned with {name}', color='green')
+            ax.plot(cleaned_data[:, channel], label=f'Cleaned with {name}', color='green')
             ax.set_title(f"Cleaned with {name}")
             ax.legend()
 
         plt.tight_layout()
         plt.show()
+
+    def compare(self, weights: Optional[Dict[str, float]] = None):
+        if not self.results:
+            print("No results to compare. Run the tester first.")
+            return
+
+        print("\n=== Best Method for Each Metric ===")
+        
+        first_method_name = list(self.results.keys())[0]
+        all_metrics = list(self.results[first_method_name].keys())
+        
+        metrics_higher_is_better = {
+            'mse': False,
+            'snr_improvement_db': True,
+            'artifact_removal_ratio': True,
+            'mua_correlation': True,
+            'hit_rate': True,
+            'miss_rate': False,
+            'false_positive_rate': False,
+            'lfp_psd_correlation': True
+        }
+
+        for metric in all_metrics:
+            # Default to True if a metric is not in the dictionary
+            higher_is_better = metrics_higher_is_better.get(metric, True)
+            
+            best_method = None
+            best_score = -np.inf if higher_is_better else np.inf
+
+            for method_name, metrics in self.results.items():
+                score = metrics.get(metric)
+                if score is None:
+                    continue
+                
+                if higher_is_better:
+                    if score > best_score:
+                        best_score = score
+                        best_method = method_name
+                else:  # lower is better
+                    if score < best_score:
+                        best_score = score
+                        best_method = method_name
+            
+            if best_method:
+                print(f"Best for {metric}: {best_method} ({best_score:.4f})")
+
+        print("\n=== Weighted Scoring Summary ===")
+
+        if weights is None:
+            weights = {
+                'mse': 1.0,
+                'snr_improvement_db': 1.0,
+                'mua_correlation': 1.0,
+                'hit_rate': 1.5,
+                'lfp_psd_correlation': 1.0,
+            }
+        
+        print("Using weights:")
+        for metric, weight in weights.items():
+            print(f"  - {metric}: {weight}")
+
+        method_scores = {name: 0.0 for name in self.results.keys()}
+        
+        for metric, weight in weights.items():
+            if metric not in all_metrics:
+                print(f"Warning: metric '{metric}' from weights not in results. Skipping.")
+                continue
+
+            scores = [res.get(metric) for res in self.results.values() if res.get(metric) is not None]
+            if not scores:
+                continue
+                
+            min_score, max_score = min(scores), max(scores)
+
+            if min_score == max_score:  # All methods performed equally
+                continue
+
+            # get() second argument is a default value if key not found
+            higher_is_better = metrics_higher_is_better.get(metric, True)
+
+            for method_name in self.results.keys():
+                score = self.results[method_name].get(metric)
+                if score is None:
+                    continue
+
+                if higher_is_better:
+                    norm_score = (score - min_score) / (max_score - min_score)
+                else:  # lower is better
+                    norm_score = (max_score - score) / (max_score - min_score)
+                
+                method_scores[method_name] += norm_score * weight
+
+        print("\nFinal Scores:")
+        best_method_overall = None
+        
+        # Sort for printing
+        sorted_scores = sorted(method_scores.items(), key=lambda item: item[1], reverse=True)
+        
+        if sorted_scores:
+            best_method_overall = sorted_scores[0][0]
+            for method_name, score in sorted_scores:
+                print(f"  - {method_name}: {score:.4f}")
+        
+        if best_method_overall:
+            print(f"\nOverall Best Method: {best_method_overall}")

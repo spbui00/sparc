@@ -2,7 +2,7 @@ from typing import Optional
 import numpy as np
 import scipy.io
 import pickle
-from sparc.core.signal_data import SignalData, SignalDataWithGroundTruth, SimulatedData
+from sparc.core.signal_data import SignalData, SimulatedData
 
 class DataHandler:
     def _ensure_2d(self, arr: np.ndarray) -> np.ndarray:
@@ -30,13 +30,6 @@ class DataHandler:
             # AllStimIdx is 1-indexed in MATLAB, convert to 0-indexed for Python
             raw_indices = data['AllStimIdx'].squeeze().astype(int)
             artifact_indices = raw_indices - 1
-            
-            # Validate indices are within bounds
-            max_samples = mixed.shape[0]
-            valid_mask = (artifact_indices >= 0) & (artifact_indices < max_samples)
-            if not np.all(valid_mask):
-                print(f"Warning: {np.sum(~valid_mask)} artifact indices are out of bounds, filtering them out")
-                artifact_indices = artifact_indices[valid_mask]
             
             print(f"Loaded {len(artifact_indices)} artifact indices from MATLAB file")
 

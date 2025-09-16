@@ -1,11 +1,11 @@
 from .template_subtraction import (
     BaseTemplateSubtraction,
-    AverageTemplateSubtraction,
+    BackwardTemplateSubtraction,
 )
 from .interpolation import LinearInterpolation
 
 __all__ = [
     "BaseTemplateSubtraction",
-    "AverageTemplateSubtraction",
+    "BackwardTemplateSubtraction",
     "LinearInterpolation",
 ]

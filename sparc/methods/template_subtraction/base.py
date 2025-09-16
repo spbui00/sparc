@@ -1,6 +1,5 @@
 import numpy as np
-from scipy import signal
-from typing import Optional, Tuple, Union, List
+from typing import Optional
 from abc import ABC, abstractmethod
 from ...core.base_method import BaseSACMethod
 
@@ -47,7 +46,7 @@ class BaseTemplateSubtraction(BaseSACMethod, ABC):
         return self
 
     @abstractmethod
-    def _learn_templates(self, data: np.ndarray) -> any:
+    def _learn_templates(self, data: np.ndarray):
         raise NotImplementedError
 
     def transform(self, data: np.ndarray) -> np.ndarray:

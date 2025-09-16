@@ -196,34 +196,34 @@ for trial_num = 1:total_trials
     Ain_t=squeeze(data_in(trial_num,:,:));
       
     for ch = 1:total_channels
-        Ain = Ain_t(:,ch);
-        Ain = Ain';
-        Dout=Ain;
+        ain = ain_t(:,ch);
+        ain = ain';
+        dout=ain;
         flag_flat                = zeros(1,num_timesteps);
         flag_1                   = zeros(1,num_timesteps);
         
-        for i = 2:length(Dout)
-        % if -threshold<Dout(i)-Dout(i-1)<threshold
-        %    Dinte(i)=Dout(i);
-            if Dout(i)-Dout(i-1) < nthreshold
+        for i = 2:length(dout)
+        % if -threshold<dout(i)-dout(i-1)<threshold
+        %    dinte(i)=dout(i);
+            if dout(i)-dout(i-1) < nthreshold
               flag_1(i)=1;
               if flag_flat(i-1)==1 
-                  if Dout(i-1)< flag_threshold && Dout(i-1)>-flag_threshold
-                  Dtemp_1(trial_num,i,ch)=Ain(i-1);% Vin instead of Ain for ADC
+                  if dout(i-1)< flag_threshold && dout(i-1)>-flag_threshold
+                  dtemp_1(trial_num,i,ch)=ain(i-1);% vin instead of ain for adc
                   flag_flat(i)=0;
                   else 
-                      Dtemp_1(trial_num,i,ch)=0;
+                      dtemp_1(trial_num,i,ch)=0;
                   end
               end
             end
-            if Dout(i)-Dout(i-1) < pthreshold && Dout(i)-Dout(i-1) > nthreshold
+            if dout(i)-dout(i-1) < pthreshold && dout(i)-dout(i-1) > nthreshold
               flag_flat(i)=1;
                 if flag_1(i-1)==1 
-                    if Dout(i)< flag_threshold && Dout(i)>-flag_threshold
-                   % Dtemp_2(i,ch)=Ain(i); % Vin instead of Ain for ADC
+                    if dout(i)< flag_threshold && dout(i)>-flag_threshold
+                   % dtemp_2(i,ch)=ain(i); % vin instead of ain for adc
                    flag_1(i)=0;
                     % else
-                    %     Dtemp_2(i,ch)=0;
+                    %     dtemp_2(i,ch)=0;
                     end
                 end
             end

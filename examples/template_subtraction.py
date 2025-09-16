@@ -1,4 +1,5 @@
-from sparc import MethodTester, AverageTemplateSubtraction, DataHandler
+from sparc import MethodTester, DataHandler
+from sparc.methods import BackwardTemplateSubtraction
 
 
 def main():
@@ -8,13 +9,21 @@ def main():
     tester = MethodTester(
         data=data,
         methods={
-            "avg_template_subtraction": AverageTemplateSubtraction(
-                template_length_ms=2,
+            "avg_template_subtraction_0.8_5": BackwardTemplateSubtraction(
+                template_length_ms=0.8,
                 num_templates_for_avg=5
             ),
-            "avg_template_subtraction_long": AverageTemplateSubtraction(
-                template_length_ms=4,
+            "avg_template_subtraction_0.9_6": BackwardTemplateSubtraction(
+                template_length_ms=0.9,
+                num_templates_for_avg=6
+            ),
+            "avg_template_subtraction_1.0_7": BackwardTemplateSubtraction(
+                template_length_ms=1.0,
                 num_templates_for_avg=5
+            ),
+            "avg_template_subtraction_1.0_7": BackwardTemplateSubtraction(
+                template_length_ms=1.0,
+                num_templates_for_avg=7
             ),
         },
     )
@@ -22,6 +31,7 @@ def main():
     tester.run()
     tester.print_results()
     tester.plot_results()
+    tester.compare()
 
 
 if __name__ == "__main__":

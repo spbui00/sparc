@@ -1,8 +1,8 @@
 from .base import BaseTemplateSubtraction
-from .average_template_subtraction import AverageTemplateSubtraction
+from .backward_template_subtraction import BackwardTemplateSubtraction
 
 
 __all__ = [
     "BaseTemplateSubtraction",
-    "AverageTemplateSubtraction", 
+    "BackwardTemplateSubtraction",
 ]

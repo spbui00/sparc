@@ -2,11 +2,8 @@ from sparc import MethodTester, AverageTemplateSubtraction, DataHandler
 
 
 def main():
-    print("Template Subtraction Demonstration on Simulated Data")
-    print("=" * 50)
-
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat')
+    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
     
     tester = MethodTester(
         data=data,

@@ -7,7 +7,7 @@ class Evaluator(NeuralAnalyzer):
     def __init__(self, sampling_rate: float):
         super().__init__(sampling_rate)
 
-    def _evaluate_spikes(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray, bin_width_ms: float = 0.1) -> Dict[str, float]:
+    def evaluate_spikes(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray, bin_width_ms: float = 0.1) -> Dict[str, float]:
         """
         Calculates the three key spike detection metrics: hit rate, miss rate,
         and false positive rate.
@@ -56,7 +56,7 @@ class Evaluator(NeuralAnalyzer):
         
         return {'hit_rate': hit_rate, 'miss_rate': miss_rate, 'false_positive_rate': fp_rate}
 
-    def _evaluate_lfp(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray) -> Dict[str, float]:
+    def evaluate_lfp(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray) -> Dict[str, float]:
         """
         Calculates the key LFP metric: Power Spectral Density (PSD) correlation.
         """
@@ -80,7 +80,7 @@ class Evaluator(NeuralAnalyzer):
 
         return {'lfp_psd_correlation': correlation}
         
-    def _evaluate_mua(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray) -> Dict[str, float]:
+    def evaluate_mua(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray) -> Dict[str, float]:
         """
         Calculates the correlation between the ground truth and cleaned MUA signals.
         MUA is a measure of the overall high-frequency spiking activity.
@@ -106,7 +106,7 @@ class Evaluator(NeuralAnalyzer):
        
         return {'mua_correlation': correlation}
 
-    def _calculate_artifact_removal_ratio(self, original: np.ndarray, cleaned: np.ndarray, ground_truth: np.ndarray) -> float:
+    def calculate_artifact_removal_ratio(self, original: np.ndarray, cleaned: np.ndarray, ground_truth: np.ndarray) -> float:
         """
         Calculates the proportion of the artifact energy that was removed.
         A value of 1.0 means 100% of the artifact was removed.
@@ -123,28 +123,14 @@ class Evaluator(NeuralAnalyzer):
         removal_ratio = 1 - (remaining_artifacts_energy / total_artifacts_energy)
         return removal_ratio
 
-    def evaluate(self, ground_truth: np.ndarray, original_mixed: np.ndarray, cleaned: np.ndarray) -> Dict[str, float]:
-        """
-        Comprehensive evaluation focused on the key metrics from the paper.
-
-        Args:
-            ground_truth: The ground truth clean signal.
-            original_mixed: The original signal with artifacts.
-            cleaned: The signal after artifact removal.
-
-        Returns:
-            A dictionary of the most relevant evaluation metrics.
-        """
-        metrics = {}
+    def calculate_snr_improvement(self, original: np.ndarray, cleaned: np.ndarray, 
+                                 ground_truth: np.ndarray) -> float:
+        # Calculate noise before cleaning
+        noise_before = original - ground_truth
+        snr_before = self.calculate_snr(ground_truth, noise_before)
         
-        metrics['mse'] = self.calculate_mse(ground_truth, cleaned)
-        metrics['snr_improvement_db'] = self.calculate_snr_improvement(original_mixed, cleaned, ground_truth)
-        metrics['artifact_removal_ratio'] = self._calculate_artifact_removal_ratio(original_mixed, cleaned, ground_truth)
-        mua_metrics = self._evaluate_mua(cleaned, ground_truth)
-        metrics.update(mua_metrics)
-        spike_metrics = self._evaluate_spikes(cleaned, ground_truth)
-        metrics.update(spike_metrics)
-        lfp_metrics = self._evaluate_lfp(cleaned, ground_truth)
-        metrics.update(lfp_metrics)
-
-        return metrics
+        # Calculate noise after cleaning
+        noise_after = cleaned - ground_truth
+        snr_after = self.calculate_snr(ground_truth, noise_after)
+        
+        return snr_after - snr_before

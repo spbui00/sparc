@@ -1,24 +1,11 @@
-"""
-Example demonstrating template subtraction with known artifact indices.
-
-This script shows how to use pre-computed artifact indices from the MATLAB
-simulation files, which bypasses the artifact detection step and directly
-applies the correction at known artifact locations.
-"""
-
 from sparc import MethodTester, AverageTemplateSubtraction, DataHandler
 import numpy as np
 
 
 def main():
-    print("Template Subtraction with Known Artifact Indices")
-    print("=" * 50)
-
-    # Load the simulated data which includes artifact indices
     data_handler = DataHandler()
     data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat')
     
-    # The data now contains artifact_indices from AllStimIdx in the MATLAB file
     if data.artifact_indices is not None:
         print(f"\nLoaded data with {len(data.artifact_indices)} known artifact locations")
         print(f"First 10 artifact indices: {data.artifact_indices[:10]}")
@@ -30,7 +17,7 @@ def main():
             print(f"Average interval between artifacts: {avg_interval:.1f} samples")
             print(f"At 30kHz, this is {avg_interval/30:.2f} ms")
     else:
-        print("\nNo artifact indices found in data - will use automatic detection")
+        print("\nLoaded data with no known artifact locations.")
     
     # Create methods with different configurations
     tester = MethodTester(
@@ -115,14 +102,14 @@ def compare_with_and_without_indices():
     
     print("\n--- Results with Known Indices ---")
     results_with = evaluator.evaluate(
-        ground_truth=data.ground_truth_spikes,
+        ground_truth=data.ground_truth,
         original_mixed=data.raw_data,
         cleaned=cleaned_with_indices
     )
     
     print("\n--- Results with Automatic Detection ---")
     results_without = evaluator.evaluate(
-        ground_truth=data.ground_truth_spikes,
+        ground_truth=data.ground_truth,
         original_mixed=data.raw_data,
         cleaned=cleaned_without_indices
     )

@@ -3,6 +3,8 @@ from .core.evaluator import Evaluator
 from .core.signal_data import SignalDataWithGroundTruth
 from typing import Dict, Any
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 class MethodTester:
     def __init__(self, data: SignalDataWithGroundTruth, methods: Dict[str, BaseSACMethod]):
@@ -34,11 +36,26 @@ class MethodTester:
             # Pass artifact_indices if available
             method.fit(self.data.raw_data, artifact_indices=self.data.artifact_indices)
             self.cleaned_signals[name] = method.transform(self.data.raw_data)
-            self.results[name] = self.evaluator.evaluate(
+            self.results[name] = self.evaluate(
                 ground_truth=self.data.ground_truth,
                 original_mixed=self.data.raw_data,
                 cleaned=self.cleaned_signals[name]
             )
+
+    def evaluate(self, ground_truth: np.ndarray, original_mixed: np.ndarray, cleaned: np.ndarray) -> Dict[str, float]:
+        metrics = {}
+        
+        metrics['mse'] = self.evaluator.calculate_mse(ground_truth, cleaned)
+        metrics['snr_improvement_db'] = self.evaluator.calculate_snr_improvement(original_mixed, cleaned, ground_truth)
+        metrics['artifact_removal_ratio'] = self.evaluator.calculate_artifact_removal_ratio(original_mixed, cleaned, ground_truth)
+        mua_metrics = self.evaluator.evaluate_mua(cleaned, ground_truth)
+        metrics.update(mua_metrics)
+        spike_metrics = self.evaluator.evaluate_spikes(cleaned, ground_truth)
+        metrics.update(spike_metrics)
+        lfp_metrics = self.evaluator.evaluate_lfp(cleaned, ground_truth)
+        metrics.update(lfp_metrics)
+
+        return metrics
 
     def get_results(self):
         """Returns the results of the tests."""

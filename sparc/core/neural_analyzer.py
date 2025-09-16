@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal, stats
+import pywt
 from typing import Dict, List, Tuple, Optional, Any
 import warnings
 
@@ -59,8 +60,10 @@ class NeuralAnalyzer:
             freqs = np.logspace(np.log10(1), np.log10(100), 50)
             
         if method == 'morlet':
-            widths = self.sampling_rate * 7 / (2 * freqs * np.pi)
-            cwt = signal.cwt(data[:, channel], signal.morlet2, widths)
+            wavelet = 'cmor1.5-1.0'
+            sampling_period = 1.0 / self.sampling_rate
+            scales = pywt.scale2frequency(wavelet, 1) / (freqs * sampling_period)
+            cwt, freqs = pywt.cwt(data[:, channel], scales, wavelet, sampling_period=sampling_period)
             power = np.abs(cwt) ** 2
         else:
             raise NotImplementedError(f"Wavelet method {method} not implemented")
@@ -110,17 +113,6 @@ class NeuralAnalyzer:
         snr_db = 10 * np.log10(signal_power / noise_power)
         return snr_db
     
-    def calculate_snr_improvement(self, original: np.ndarray, cleaned: np.ndarray, 
-                                 ground_truth: np.ndarray) -> float:
-        # Calculate noise before cleaning
-        noise_before = original - ground_truth
-        snr_before = self.calculate_snr(ground_truth, noise_before)
-        
-        # Calculate noise after cleaning
-        noise_after = cleaned - ground_truth
-        snr_after = self.calculate_snr(ground_truth, noise_after)
-        
-        return snr_after - snr_before
     
     def extract_neural_features(self, data: np.ndarray, 
                                features: List[str] = None) -> Dict[str, np.ndarray]:
@@ -290,7 +282,7 @@ class NeuralAnalyzer:
             
             # Find peaks exceeding threshold
             # Minimum distance between spikes (at least 1ms, but ensure >= 1 sample)
-            min_distance = max(1, int(self.sampling_rate / 1000))  # 1ms minimum
+            min_distance = max(1, int(self.sampling_rate / 1000))  # 1ms minimum # TODO: verify
             spike_indices, _ = signal.find_peaks(np.abs(filtered_data), height=detection_threshold, distance=min_distance)
             
             channel_spikes = []
@@ -338,107 +330,16 @@ class NeuralAnalyzer:
         plt.colorbar(im, ax=axes[1, 0], label='Power (dB)')
         
         # Wavelet transform
-        freqs_wav, times_wav, power_wav = self.compute_wavelet_transform(data, channel)
-        im2 = axes[1, 1].pcolormesh(times_wav, freqs_wav, power_wav, shading='gouraud')
-        axes[1, 1].set_title('Wavelet Transform')
-        axes[1, 1].set_xlabel('Time (s)')
-        axes[1, 1].set_ylabel('Frequency (Hz)')
-        axes[1, 1].set_yscale('log')
-        plt.colorbar(im2, ax=axes[1, 1], label='Power')
+        # freqs_wav, times_wav, power_wav = self.compute_wavelet_transform(data, channel)
+        # im2 = axes[1, 1].pcolormesh(times_wav, freqs_wav, power_wav, shading='gouraud')
+        # axes[1, 1].set_title('Wavelet Transform')
+        # axes[1, 1].set_xlabel('Time (s)')
+        # axes[1, 1].set_ylabel('Frequency (Hz)')
+        # axes[1, 1].set_yscale('log')
+        # plt.colorbar(im2, ax=axes[1, 1], label='Power')
         
         plt.tight_layout()
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-    
-    def compare_signals(self, original: np.ndarray, cleaned: np.ndarray, 
-                       ground_truth: Optional[np.ndarray] = None,
-                       channel: int = 0, time_window: Optional[Tuple[int, int]] = None):
-        """
-        Compare original, cleaned, and ground truth signals.
-        
-        Args:
-            original: Original signal with artifacts
-            cleaned: Cleaned signal
-            ground_truth: Ground truth clean signal (optional)
-            channel: Channel to compare
-            time_window: Time window to plot (start, end) in samples
-        """
-        if time_window is None:
-            time_window = (0, min(original.shape[0], 2000))
-            
-        start, end = time_window
-        time_axis = np.arange(start, end) / self.sampling_rate * 1000  # Convert to ms
-        
-        plt.figure(figsize=(15, 10))
-        
-        # Time series comparison
-        plt.subplot(2, 2, 1)
-        plt.plot(time_axis, original[start:end, channel], 'r-', label='Original', alpha=0.7)
-        plt.plot(time_axis, cleaned[start:end, channel], 'g-', label='Cleaned', alpha=0.7)
-        if ground_truth is not None:
-            plt.plot(time_axis, ground_truth[start:end, channel], 'b-', label='Ground Truth', linewidth=2)
-        plt.title(f'Time Series Comparison - Channel {channel}')
-        plt.xlabel('Time (ms)')
-        plt.ylabel('Amplitude')
-        plt.legend()
-        plt.grid(True)
-        
-        # PSD comparison
-        plt.subplot(2, 2, 2)
-        freqs_orig, psd_orig = self.compute_psd(original[start:end, :])
-        freqs_clean, psd_clean = self.compute_psd(cleaned[start:end, :])
-        plt.semilogy(freqs_orig, psd_orig[:, channel], 'r-', label='Original', alpha=0.7)
-        plt.semilogy(freqs_clean, psd_clean[:, channel], 'g-', label='Cleaned', alpha=0.7)
-        if ground_truth is not None:
-            freqs_gt, psd_gt = self.compute_psd(ground_truth[start:end, :])
-            plt.semilogy(freqs_gt, psd_gt[:, channel], 'b-', label='Ground Truth', linewidth=2)
-        plt.title('Power Spectral Density Comparison')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Power')
-        plt.legend()
-        plt.grid(True)
-        
-        # SNR comparison
-        plt.subplot(2, 2, 3)
-        if ground_truth is not None:
-            snr_orig = self.calculate_snr(ground_truth[start:end, channel], 
-                                        original[start:end, channel] - ground_truth[start:end, channel])
-            snr_clean = self.calculate_snr(ground_truth[start:end, channel], 
-                                         cleaned[start:end, channel] - ground_truth[start:end, channel])
-            
-            snr_improvement = snr_clean - snr_orig
-            
-            bars = plt.bar(['Original', 'Cleaned'], [snr_orig, snr_clean])
-            plt.title(f'SNR Comparison\nImprovement: {snr_improvement:.2f} dB')
-            plt.ylabel('SNR (dB)')
-            plt.grid(True, axis='y')
-            
-            # Color bars
-            bars[0].set_color('red')
-            bars[1].set_color('green')
-        
-        # Feature comparison
-        plt.subplot(2, 2, 4)
-        features = ['rms', 'variance', 'skewness', 'kurtosis']
-        orig_features = self.extract_neural_features(original[start:end, :], features)
-        clean_features = self.extract_neural_features(cleaned[start:end, :], features)
-        
-        x = np.arange(len(features))
-        width = 0.35
-        
-        plt.bar(x - width/2, [orig_features[f][channel] for f in features], 
-                width, label='Original', alpha=0.7, color='red')
-        plt.bar(x + width/2, [clean_features[f][channel] for f in features], 
-                width, label='Cleaned', alpha=0.7, color='green')
-        
-        plt.title('Feature Comparison')
-        plt.xlabel('Features')
-        plt.ylabel('Value')
-        plt.xticks(x, features, rotation=45)
-        plt.legend()
-        plt.grid(True, axis='y')
-        
-        plt.tight_layout()
         plt.show()

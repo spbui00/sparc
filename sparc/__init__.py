@@ -4,6 +4,7 @@ from .core.evaluator import Evaluator
 from .core.neural_analyzer import NeuralAnalyzer
 from .method_tester import MethodTester
 from .core.signal_data import SignalData, SignalDataWithGroundTruth
+from .core import NeuralPlotter
 
 __version__ = "0.0.1"
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "MethodTester",
     "SignalData",
     "SignalDataWithGroundTruth",
+    "NeuralPlotter"
 ]

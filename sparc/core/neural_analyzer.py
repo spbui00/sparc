@@ -219,50 +219,50 @@ class NeuralAnalyzer:
             
         return all_trials_spikes
     
-    def plot_spectral_analysis(self, data: np.ndarray, trial_idx: int = 0, channel_idx: int = 0,
-                           title: str = "Spectral Analysis", save_path: Optional[str] = None):
-        if data.ndim != 3:
-            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
-        
-        # Check if selected trial and channel are valid
-        if trial_idx >= data.shape[0]:
-            raise IndexError(f"trial_idx {trial_idx} is out of bounds for data with {data.shape[0]} trials.")
-        if channel_idx >= data.shape[2]:
-            raise IndexError(f"channel_idx {channel_idx} is out of bounds for data with {data.shape[2]} channels.")
-
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
-        
-        trial_data_2d = data[trial_idx, :, :]
-        channel_data_1d = trial_data_2d[:, channel_idx]
-
-        # Time series
-        time_axis = np.arange(trial_data_2d.shape[0]) / self.sampling_rate
-        axes[0, 0].plot(time_axis, channel_data_1d)
-        axes[0, 0].set_title('Time Series')
-        axes[0, 0].set_xlabel('Time (s)')
-        axes[0, 0].set_ylabel('Amplitude')
-        axes[0, 0].grid(True)
-        
-        single_trial_3d = data[np.newaxis, trial_idx, :, :]
-        freqs, psd = self.compute_psd(single_trial_3d)
-        axes[0, 1].semilogy(freqs, psd[:, channel_idx])
-        axes[0, 1].set_title('Power Spectral Density')
-        axes[0, 1].set_xlabel('Frequency (Hz)')
-        axes[0, 1].set_ylabel('Power')
-        axes[0, 1].grid(True)
-        
-        # Spectrogram
-        freqs_spec, times_spec, Sxx = self.compute_spectrogram(data, trial_idx=trial_idx, channel=channel_idx)
-        im = axes[1, 0].pcolormesh(times_spec, freqs_spec, 10 * np.log10(Sxx), shading='gouraud')
-        axes[1, 0].set_title('Spectrogram')
-        axes[1, 0].set_xlabel('Time (s)')
-        axes[1, 0].set_ylabel('Frequency (Hz)')
-        plt.colorbar(im, ax=axes[1, 0], label='Power (dB)')
-        
-        # ... (rest of the function is the same) ...
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
+    # def plot_spectral_analysis(self, data: np.ndarray, trial_idx: int = 0, channel_idx: int = 0,
+    #                        title: str = "Spectral Analysis", save_path: Optional[str] = None):
+    #     if data.ndim != 3:
+    #         raise ValueError("Input data must be 3D (trials, timesteps, channels).")
+    #
+    #     # Check if selected trial and channel are valid
+    #     if trial_idx >= data.shape[0]:
+    #         raise IndexError(f"trial_idx {trial_idx} is out of bounds for data with {data.shape[0]} trials.")
+    #     if channel_idx >= data.shape[2]:
+    #         raise IndexError(f"channel_idx {channel_idx} is out of bounds for data with {data.shape[2]} channels.")
+    #
+    #     fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    #     fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
+    #
+    #     trial_data_2d = data[trial_idx, :, :]
+    #     channel_data_1d = trial_data_2d[:, channel_idx]
+    #
+    #     # Time series
+    #     time_axis = np.arange(trial_data_2d.shape[0]) / self.sampling_rate
+    #     axes[0, 0].plot(time_axis, channel_data_1d)
+    #     axes[0, 0].set_title('Time Series')
+    #     axes[0, 0].set_xlabel('Time (s)')
+    #     axes[0, 0].set_ylabel('Amplitude')
+    #     axes[0, 0].grid(True)
+    #
+    #     single_trial_3d = data[np.newaxis, trial_idx, :, :]
+    #     freqs, psd = self.compute_psd(single_trial_3d)
+    #     axes[0, 1].semilogy(freqs, psd[:, channel_idx])
+    #     axes[0, 1].set_title('Power Spectral Density')
+    #     axes[0, 1].set_xlabel('Frequency (Hz)')
+    #     axes[0, 1].set_ylabel('Power')
+    #     axes[0, 1].grid(True)
+    #
+    #     # Spectrogram
+    #     freqs_spec, times_spec, Sxx = self.compute_spectrogram(data, trial_idx=trial_idx, channel=channel_idx)
+    #     im = axes[1, 0].pcolormesh(times_spec, freqs_spec, 10 * np.log10(Sxx), shading='gouraud')
+    #     axes[1, 0].set_title('Spectrogram')
+    #     axes[1, 0].set_xlabel('Time (s)')
+    #     axes[1, 0].set_ylabel('Frequency (Hz)')
+    #     plt.colorbar(im, ax=axes[1, 0], label='Power (dB)')
+    #
+    #     # ... (rest of the function is the same) ...
+    #     plt.tight_layout()
+    #
+    #     if save_path:
+    #         plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    #     plt.show()

@@ -1,4 +1,5 @@
-from sparc import DataHandler, NeuralAnalyzer
+from sparc import DataHandler, NeuralAnalyzer, NeuralPlotter
+
 
 def main():
     data_handler = DataHandler()
@@ -20,7 +21,11 @@ def main():
     print(f"Extracted {len(spikes[0])} spikes from the raw mixed signal from channel 0")
     print(f"LFP shape: {lfp.shape}")
 
-    analyzer.plot_spectral_analysis(data.raw_data, title="Raw Mixed Signal Spectral Analysis")
+    # analyzer.plot_spectral_analysis(data.raw_data, title="Raw Mixed Signal Spectral Analysis")
+    plotter = NeuralPlotter(analyzer)
+    plotter.plot_trial_channel(data.raw_data, trial_idx=0, channel_idx=0, title="Raw Mixed Signal - Trial 0, Channel 0")
+    plotter.plot_psd(data.raw_data, title="PSD of Raw Mixed Signal - Channel 0")
+    plotter.plot_psth(spikes, channel_idx=0, bin_width_ms=1000, title="PSTH of Raw Mixed Signal - Channel 0")
 
 
 if __name__ == "__main__":

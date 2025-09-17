@@ -3,12 +3,12 @@ from sparc.methods import ERAASR
 
 def main():
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_1_1024.mat', sampling_rate=30000)
-    print(f"number of channels: {data.raw_data.shape[1]}")
+    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
+    print(f"number of channels: {data.raw_data.shape}")
     
-    n_pc_channels_options = [4, 8, 12]
-    n_pc_pulses_options = [2, 4, 6]
-    n_pc_trials_options = [1, 2, 4]
+    n_pc_channels_options = [2, 4, 8]
+    n_pc_pulses_options = [2, 6]
+    n_pc_trials_options = [1]
 
     methods = {}
 
@@ -24,18 +24,16 @@ def main():
                     n_pulses=8,
                 )
                 methods[method_name] = method
-    
+
     tester = MethodTester(
         data=data,
         methods=methods,
     )
 
-    eraasr_data = data_handler.load_eraasr_data('../research/datasets/eraasr-1.0.0/exampleDataTensor.mat', sampling_rate=30000)
-
     tester.run()
     tester.print_results()
     tester.compare()
-    # tester.plot_results()
+    tester.plot_results()
 
 
 if __name__ == "__main__":

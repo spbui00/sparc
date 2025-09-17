@@ -188,7 +188,19 @@ class NeuralAnalyzer:
         pre_samples = int(self.sampling_rate * pre_ms / 1000)
         post_samples = int(self.sampling_rate * post_ms / 1000)
         
-        sos = signal.butter(4, [250, 5000], btype='bandpass', fs=self.sampling_rate, output='sos')
+        nyquist = self.sampling_rate / 2
+        low_freq = 250
+        high_freq = 4000
+
+        # Ensure the high frequency cutoff is below the Nyquist frequency
+        if high_freq >= nyquist:
+            high_freq = nyquist * 0.95 # Use 95% of Nyquist to be safe
+            print(f"Warning: High frequency cutoff adjusted to {high_freq:.2f} Hz due to sampling rate.")
+
+        if high_freq <= low_freq:
+             raise ValueError(f"High frequency cutoff ({high_freq} Hz) must be greater than low frequency cutoff ({low_freq} Hz). Check sampling rate.")
+
+        sos = signal.butter(4, [low_freq, high_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
         
         all_trials_spikes = []
         for trial_idx in range(data.shape[0]):

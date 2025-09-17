@@ -151,6 +151,7 @@ class DataHandler:
             raise
     
     def _detect_artifacts_eraasr(self, data: np.ndarray, sampling_rate) -> ArtifactWindows:
+        print("Detecting artifacts using ERAASR heuristic from paper...")
         # TODO: Make this more robust and flexible
         threshold_channel_idx = 15
         hp_corner_hz = 250

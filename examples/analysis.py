@@ -4,14 +4,15 @@ from sparc import DataHandler, NeuralAnalyzer, NeuralPlotter
 def main():
     data_handler = DataHandler()
     # data = data_handler.load_swec_ethz(
-    #     mixed_data_path="../research/datasets/SWEC-ETHZ/mixed_signal.npy",
-    #     ground_truth_path="../research/datasets/SWEC-ETHZ/gt.npy",
-    #     artifact_path="../research/datasets/SWEC-ETHZ/artifacts.npy",
+    #     mixed_data_path="../research/datasets/SWEC-ETHZ/mixed2000.npy",
+    #     ground_truth_path="../research/datasets/SWEC-ETHZ/clean2000.npy",
+    #     artifact_path="../research/datasets/SWEC-ETHZ/artifact2000.npy",
     #     sampling_rate=2000,
     #     stim_rate=1000
     # )
 
     data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
+    print(f"Data shape: {data.raw_data.shape}, Sampling rate: {data.sampling_rate} Hz")
 
     analyzer = NeuralAnalyzer(sampling_rate=data.sampling_rate)
     

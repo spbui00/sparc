@@ -1,7 +1,11 @@
+'''
+Generate synthetic artifacts using "Review 2024" paper equations.
+
+'''
 import pickle
-from scipy.signal import resample
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.io
 from tqdm import tqdm
 
 def load_selected_clips(file_path):
@@ -116,9 +120,9 @@ def plot_one_clip_allchannels(data_signal, data_artifact, clip_index=0, title="C
 
 
 
-
+# fixed bug: exp decay time index should be relative to the start time: -np.exp(-3000 * (time_artifact[indices_exp]-start_time)) - np.exp(-5000 * (time_artifact[indices_exp]-start_time))
 def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_rate_artifact, stim_rate, stimulation_channel, stim_current_strength, 
-                                      strip_distance=1e-1, normal_strip_distance=1e-3, f_pulse=2500):
+                                      strip_distance=1e-1, normal_strip_distance=1e-3):
     """Generate sine wave + exponential decay artifacts for all clips, ensuring silent channels remain zero.
 
     Parameters:
@@ -130,11 +134,11 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
         stim_current_strength: float, stimulation current strength       
         strip_distance: float, distance between different strips (tunable)
         normal_strip_distance: float, distance between channels within the same strip (default 1)
-        f_pulse: float, frequency of the pulse (default 2500 Hz)
 
     Returns:
         artifact: np.ndarray of shape (num_clips, num_channels, num_timesteps)
     """
+    f_pulse = 1000  # Frequency of the pulse in Hz
     num_clips, num_channels, num_timesteps = input_data.shape
     dt = 1 / sampling_rate_signal
     Total_time = num_timesteps * dt
@@ -176,7 +180,7 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
             for ch in range(num_channels):
                 if silent_channels[ch]:  # Skip silent channels
                     continue
-                clip_artifact[ch, indices_sine] = -np.sin(2 * np.pi * f_pulse * time_artifact[indices_sine])
+                clip_artifact[ch, indices_sine] = -np.sin(2 * np.pi * f_pulse * time_artifact[indices_sine]) 
                 clip_artifact[ch, indices_exp] += -np.exp(-3000 * (time_artifact[indices_exp]-start_time)) - np.exp(-5000 * (time_artifact[indices_exp]-start_time))
         
         # Scale by amplitude for each channel
@@ -188,16 +192,27 @@ def generate_sine_exp_decay_artifact(input_data, sampling_rate_signal, sampling_
 
 
 def resample_signal(signal, original_rate, target_rate):
-    """Resample signal to a new sampling rate using scipy.signal.resample."""
-    # Calculate the number of samples in the output signal
+    """Resample signal to a new sampling rate."""
     num_original_samples = signal.shape[-1]
     num_target_samples = int(num_original_samples * target_rate / original_rate)
-
-    # Resample along the last axis (time)
-    # This function automatically applies an anti-aliasing filter
-    resampled_signal = resample(signal, num_target_samples, axis=-1)
     
-    return resampled_signal
+    if target_rate < original_rate:
+        # Downsample by simple decimation
+        factor = original_rate // target_rate
+        return signal[:, :, ::factor]
+    
+    elif target_rate > original_rate:
+        # Create the original and target time indices
+        original_time = np.linspace(0, 1, num_original_samples, endpoint=False)
+        target_time = np.linspace(0, 1, num_target_samples, endpoint=False)
+        # Interpolate along the last axis (timesteps)
+        interpolated_signal = np.zeros((signal.shape[0], signal.shape[1], num_target_samples))       
+        for i in range(signal.shape[0]):  # Iterate over clips
+            for j in range(signal.shape[1]):  # Iterate over channels
+                interpolated_signal[i, j, :] = np.interp(target_time, original_time, signal[i, j, :])
+        return interpolated_signal
+    else: # Same sampling rate
+        return signal
 
 def plot_frequency_spectrum(original_signal, artifact_signal, original_sampling_rate, downsampled_sampling_rate, channel_index=0):
     """Plot the frequency spectrum of the original and artifact signals before and after downsampling for a specific channel.
@@ -259,8 +274,6 @@ def plot_frequency_spectrum(original_signal, artifact_signal, original_sampling_
     
 if __name__ == "__main__":
     file_path = '../research/datasets/SWEC-ETHZ/selected_clips_pat123.pkl'
-    amplitude_folder = '../research/datasets/SWEC-ETHZ/'
-    data_folder = '../research/datasets/SWEC-ETHZ/'
     sampling_rate_signal = 512  # Fixed sampling rate of the dataset
     sampling_rate_artifact = 2000  # Sampling rate of the artifact
     target_sampling_rate = 2000  # Tunable resampling rate
@@ -284,18 +297,18 @@ if __name__ == "__main__":
     # plot_one_clip(clip, sampling_rate_signal, title=f"Original Signal of Patient {patient_id}", channel=selected_channel)
     
     ## Add synthetic artifact to the seizure data ###################################################################################################################################
-    # artifact_seizure = generate_sine_exp_decay_artifact(seizure_data, sampling_rate_signal, sampling_rate_artifact, stimulation_rate, stimulation_channel, stim_current_strength)
+    artifact_seizure = generate_sine_exp_decay_artifact(seizure_data, sampling_rate_signal, sampling_rate_artifact, stimulation_rate, stimulation_channel, stim_current_strength)
     seizure_data_interp = resample_signal(seizure_data, sampling_rate_signal, sampling_rate_artifact)
     # seizure_data_interp = np.load(data_folder+f'seizure_data_interp_rate{sampling_rate_artifact}.npy')
-    # mixed_seizure = seizure_data_interp + artifact_seizure
+    mixed_seizure = seizure_data_interp + artifact_seizure
     # # # # save the data
-    # np.save(amplitude_folder + f'artifact{sampling_rate_artifact}.npy', artifact_seizure)
-    # np.save(data_folder+f'clean{sampling_rate_artifact}.npy', seizure_data_interp)
-    # np.save(amplitude_folder+f'mixed{sampling_rate_artifact}.npy', mixed_seizure)
+    np.save(f'artifact_seizure_rate{sampling_rate_artifact}.npy', artifact_seizure)
+    # np.save(data_folder+f'seizure_data_interp_rate{sampling_rate_artifact}.npy', seizure_data_interp)
+    np.save(f'mixed_seizure_rate{sampling_rate_artifact}.npy', mixed_seizure)
     # load the data
-    artifact_seizure = np.load(amplitude_folder+f'artifact{sampling_rate_artifact}.npy')
+    artifact_seizure = np.load(f'artifact_seizure_rate{sampling_rate_artifact}.npy')
    
-    mixed_seizure = np.load(amplitude_folder+f'mixed{sampling_rate_artifact}.npy')
+    mixed_seizure = np.load(f'mixed_seizure_rate{sampling_rate_artifact}.npy')
     
     # add low freq component
     if low_freq_component:
@@ -312,7 +325,7 @@ if __name__ == "__main__":
     
     # # plot one clip all channels after adding artifact
     plot_one_clip_allchannels(seizure_data_interp, artifact_seizure, clip_index=0, title=f"StimRate_{stimulation_rate}_SampleRate_{sampling_rate_artifact}_{100/stimulation_rate}s", 
-                              sampling_rate=sampling_rate_artifact, stimulation_rate=1e3, timesteps_for_plot = 10)
+                              sampling_rate=sampling_rate_artifact, stimulation_rate=1e3, timesteps_for_plot = 100)
     
     
     # resample the data
@@ -323,4 +336,52 @@ if __name__ == "__main__":
     # # plot one clip all channels after adding artifact
     plot_one_clip_allchannels(seizure_data_interp, artifact_seizure, clip_index=0, title=f"StimRate_{stimulation_rate}_SampleRate_{target_sampling_rate}_{1000/stimulation_rate}s", 
                               sampling_rate=target_sampling_rate, stimulation_rate=1e3, timesteps_for_plot = 1000)
-
+    
+    # Save to .mat file
+    # scipy.io.savemat(amplitude_folder+f'swec-ethz-ieeg-seizure-data-rate{target_sampling_rate}.mat', {"mixed_seizure": mixed_seizure, "artifact_seizure": artifact_seizure, "signal_seizure": seizure_data_interp})
+    
+    
+    ## Add synthetic artifact to the non-seizure data ###################################################################################################################################
+    
+    # artifact_nonseizure = generate_sine_exp_decay_artifact(non_seizure_data, sampling_rate_signal, sampling_rate_artifact, stimulation_rate, stimulation_channel, stim_current_strength)
+    # # nonseizure_data_interp = resample_signal(non_seizure_data, sampling_rate_signal, sampling_rate_artifact)
+    # nonseizure_data_interp = np.load(data_folder+f'nonseizure_data_interp_rate{sampling_rate_artifact}.npy')
+    # mixed_nonseizure = nonseizure_data_interp + artifact_nonseizure
+    # # # save the data
+    # np.save(amplitude_folder+f'artifact_nonseizure_rate{sampling_rate_artifact}.npy', artifact_nonseizure)
+    # # np.save(data_folder+f'nonseizure_data_interp_rate{sampling_rate_artifact}.npy', nonseizure_data_interp)
+    # np.save(amplitude_folder+f'mixed_nonseizure_rate{sampling_rate_artifact}.npy', mixed_nonseizure)
+    # # load the data
+    # artifact_nonseizure = np.load(amplitude_folder+f'artifact_nonseizure_rate{sampling_rate_artifact}.npy')
+    # mixed_nonseizure = np.load(amplitude_folder+f'mixed_nonseizure_rate{sampling_rate_artifact}.npy') 
+    
+    # # add low freq component
+    # if low_freq_component:
+    #     # Generate the low-frequency signal (1D) for the time axis
+    #     low_freq = np.sin(2 * np.pi * 0.01 * np.arange(nonseizure_data_interp.shape[2]))  # Shape (4s * sampling_rate_artifact,)
+    #     # Expand dimensions to match the shape of artifact_seizure (15, 88, 4s * sampling_rate_artifact)
+    #     low_freq = low_freq[np.newaxis, np.newaxis, :]  # Shape (1, 1, 4s * sampling_rate_artifact)
+    #     # Add low-frequency signal across all clips and channels
+    #     artifact_nonseizure += low_freq_scaler * low_freq  # Broadcasting to shape (15, 88, 4s * sampling_rate_artifact)
+    #     mixed_nonseizure += low_freq_scaler * low_freq  # Broadcasting to shape (15, 88, 4s * sampling_rate_artifact)
+    
+    # # plot frequency spectrum
+    # plot_frequency_spectrum(nonseizure_data_interp, artifact_nonseizure, sampling_rate_artifact, target_sampling_rate, channel_index=selected_channel)
+    
+    # # # plot one clip all channels after adding artifact
+    # plot_one_clip_allchannels(nonseizure_data_interp, artifact_nonseizure, clip_index=0, title=f"StimRate_{stimulation_rate}_SampleRate_{sampling_rate_artifact}_{100/stimulation_rate}s", 
+    #                           sampling_rate=sampling_rate_artifact, stimulation_rate=1e3, timesteps_for_plot = 100)
+      
+    # # resample the data
+    # artifact_seizure = resample_signal(artifact_nonseizure, sampling_rate_artifact, target_sampling_rate)
+    # seizure_data_interp = resample_signal(nonseizure_data_interp, sampling_rate_artifact, target_sampling_rate)
+    # mixed_seizure = resample_signal(mixed_nonseizure, sampling_rate_artifact, target_sampling_rate)
+    
+    # # # plot one clip all channels after adding artifact
+    # plot_one_clip_allchannels(nonseizure_data_interp, artifact_nonseizure, clip_index=0, title=f"StimRate_{stimulation_rate}_SampleRate_{target_sampling_rate}_{1000/stimulation_rate}s", 
+    #                           sampling_rate=target_sampling_rate, stimulation_rate=1e3, timesteps_for_plot = 1000)
+    
+    # # Save to .mat file
+    # scipy.io.savemat(amplitude_folder+f'swec-ethz-ieeg-nonseizure-data-rate{target_sampling_rate}.mat', {"mixed_nonseizure": mixed_nonseizure, "artifact_nonseizure": artifact_nonseizure, "signal_nonseizure": nonseizure_data_interp})
+    
+    

@@ -9,6 +9,7 @@ from sparc.core.signal_data import ArtifactMarkers, ArtifactTriggers, ArtifactWi
 
 class ERAASR(BaseSACMethod):
     def __init__(self,
+                 sampling_rate: Optional[float] = None,
                  hp_corner_hz: float = 200,
                  n_pc_channels: int = 12,
                  n_pc_pulses: int = 6,
@@ -27,7 +28,7 @@ class ERAASR(BaseSACMethod):
             samples_per_pulse (int): The number of time samples in a single stimulation pulse.
             n_pulses (int): The number of pulses in a single stimulation train.
         """
-        super().__init__(**kwargs)
+        super().__init__(sampling_rate,**kwargs)
         self.hp_corner_hz = hp_corner_hz
         self.n_pc_channels = n_pc_channels
         self.n_pc_pulses = n_pc_pulses
@@ -46,7 +47,6 @@ class ERAASR(BaseSACMethod):
         if isinstance(artifact_markers, ArtifactTriggers):
             self.artifact_markers_ = np.sort(artifact_markers.starts.flatten())
         elif isinstance(artifact_markers, ArtifactWindows):
-            # For ERAASR, we only need the start of the artifact window
             self.artifact_markers_ = np.sort(artifact_markers.intervals[:, 0].flatten())
         else:
             raise TypeError("artifact_markers must be of type ArtifactTriggers or ArtifactWindows")
@@ -57,12 +57,6 @@ class ERAASR(BaseSACMethod):
     def transform(self, data: np.ndarray) -> np.ndarray:
         if not self.is_fitted or self.artifact_markers_ is None:
             raise RuntimeError("The transform method cannot be called before fit.")
-
-        was_2d = False
-        if data.ndim == 2:
-            data = data[np.newaxis, :, :] # Add a trial dimension
-            was_2d = True
-        
         num_trials, num_samples, num_channels = data.shape
         cleaned_data = data.copy()
 
@@ -84,7 +78,6 @@ class ERAASR(BaseSACMethod):
             # Reshape into a 4D tensor: (trials, time_in_pulse, pulses, channels)
             segment_tensor = data_to_clean.reshape((num_trials, pulse_len, self.n_pulses, num_channels))
             
-            # --- Iterative PCA Cleaning (no changes here) ---
             
             # A. Clean across Channels
             if self.n_pc_channels > 0:
@@ -116,9 +109,6 @@ class ERAASR(BaseSACMethod):
             # Insert the cleaned segment back into the main data array
             cleaned_data[:, artifact_window, :] = cleaned_segment
 
-        if was_2d:
-            return cleaned_data.squeeze(axis=0)
-
         return cleaned_data
 
     def _high_pass_filter(self, data: np.ndarray, fs: float, corner_hz: float, order: int) -> np.ndarray:
@@ -126,11 +116,6 @@ class ERAASR(BaseSACMethod):
         return signal.sosfiltfilt(sos, data, axis=1)
 
     def _reshape_tensor(self, tensor: np.ndarray, dim_groups: List[List[int]]) -> np.ndarray:
-        """
-        Reshapes a tensor by concatenating specified dimension groups.
-        e.g., tensor shape (10, 20, 30, 40) and dim_groups [[0, 2], [1, 3]]
-        becomes a matrix of shape (300, 800).
-        """
         # Python uses 0-based indexing
         flat_dims = [item for sublist in dim_groups for item in sublist]
         permute_order = flat_dims + [i for i in range(tensor.ndim) if i not in flat_dims]
@@ -153,9 +138,7 @@ class ERAASR(BaseSACMethod):
         all_feature_indices = np.arange(num_features)
 
         artifact_pcs = None
-        
         for i in range(num_features):
-            # Define which other channels/features to use for PCA model
             omit_indices = np.arange(max(0, i - omit_bandwidth), min(num_features, i + omit_bandwidth + 1))
             model_indices = np.setdiff1d(all_feature_indices, omit_indices)
             
@@ -175,7 +158,6 @@ class ERAASR(BaseSACMethod):
             # The prediction is the reconstructed artifact
             artifact_for_feature_i = reg.predict(artifact_pcs)
             
-            # Subtract the artifact
             cleaned_matrix[:, i] -= artifact_for_feature_i
             reconstructed_artifact[:, i] = artifact_for_feature_i
             

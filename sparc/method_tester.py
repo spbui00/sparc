@@ -48,7 +48,6 @@ class MethodTester:
         
         metrics['mse'] = self.evaluator.calculate_mse(ground_truth, cleaned)
         metrics['snr_improvement_db'] = self.evaluator.calculate_snr_improvement(original_mixed, cleaned, ground_truth)
-        metrics['artifact_removal_ratio'] = self.evaluator.calculate_artifact_removal_ratio(original_mixed, cleaned, ground_truth)
         mua_metrics = self.evaluator.evaluate_mua(cleaned, ground_truth)
         metrics.update(mua_metrics)
         spike_metrics = self.evaluator.evaluate_spikes(cleaned, ground_truth)
@@ -78,25 +77,38 @@ class MethodTester:
                 if isinstance(value, float):
                     print(f"  {metric_name}: {value:.4f}")
 
-    def plot_results(self, channel=0):
+    def plot_results(self, trial_idx: int = 0, channel_idx: int = 0):
         if not self.cleaned_signals:
             print("No cleaned signals to plot.")
             return
+        if self.data.raw_data.ndim != 3:
+            raise ValueError(f"Plotting requires 3D data (trials, timesteps, channels), but got {self.data.raw_data.ndim} dimensions.")
+        
+        if trial_idx >= self.data.raw_data.shape[0]:
+            raise IndexError(f"trial_idx {trial_idx} is out of bounds for data with {self.data.raw_data.shape[0]} trials.")
+        if channel_idx >= self.data.raw_data.shape[2]:
+            raise IndexError(f"channel_idx {channel_idx} is out of bounds for data with {self.data.raw_data.shape[2]} channels.")
 
-        print(f"\nPlotting results for channel {channel}...")
+        print(f"\nPlotting results for trial {trial_idx}, channel {channel_idx}...")
+
+        raw_trial_data = self.data.raw_data[trial_idx, :, :]
+        gt_trial_data = self.data.ground_truth[trial_idx, :, :]
 
         fig, axes = plt.subplots(len(self.cleaned_signals) + 1, 1, figsize=(15, 10), sharex=True)
         
-        axes[0].plot(self.data.raw_data[:, channel], label='Original', color='black', alpha=0.5)
-        axes[0].plot(self.data.ground_truth[:, channel], label='Ground Truth', color='blue', alpha=0.7)
-        axes[0].set_title("Original Data")
+        axes[0].plot(raw_trial_data[:, channel_idx], label='Original', color='black', alpha=0.5)
+        axes[0].plot(gt_trial_data[:, channel_idx], label='Ground Truth', color='blue', alpha=0.7)
+        axes[0].set_title(f"Original Data - Trial {trial_idx}")
         axes[0].legend()
 
-        for i, (name, cleaned_data) in enumerate(self.cleaned_signals.items()):
+        for i, (name, cleaned_data_3d) in enumerate(self.cleaned_signals.items()):
             ax = axes[i+1]
-            ax.plot(self.data.raw_data[:, channel], label='Original', color='black', alpha=0.2)
-            ax.plot(self.data.ground_truth[:, channel], label='Ground Truth', color='blue', alpha=0.3)
-            ax.plot(cleaned_data[:, channel], label=f'Cleaned with {name}', color='green')
+            
+            cleaned_trial_data = cleaned_data_3d[trial_idx, :, :]
+            
+            ax.plot(raw_trial_data[:, channel_idx], label='Original', color='black', alpha=0.2)
+            ax.plot(gt_trial_data[:, channel_idx], label='Ground Truth', color='blue', alpha=0.3)
+            ax.plot(cleaned_trial_data[:, channel_idx], label=f'Cleaned with {name}', color='green')
             ax.set_title(f"Cleaned with {name}")
             ax.legend()
 
@@ -116,7 +128,6 @@ class MethodTester:
         metrics_higher_is_better = {
             'mse': False,
             'snr_improvement_db': True,
-            'artifact_removal_ratio': True,
             'mua_correlation': True,
             'hit_rate': True,
             'miss_rate': False,

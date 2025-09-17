@@ -2,7 +2,7 @@ from sparc import DataHandler, NeuralAnalyzer
 
 def main():
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('research/generate_dataset/SimulatedData_2.mat')
+    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat')
     
     analyzer = NeuralAnalyzer(sampling_rate=data.sampling_rate)
     

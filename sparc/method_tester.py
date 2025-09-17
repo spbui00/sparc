@@ -31,10 +31,11 @@ class MethodTester:
         """
         print(f"Running tests with {list(self.methods.keys())} methods.")
         
+        total = len(self.methods)
         for name, method in self.methods.items():
-            print(f"Running method: {name}")
-            # Pass artifact_indices if available
-            method.fit(self.data.raw_data, artifact_indices=self.data.artifact_indices)
+            print(f"\n=== Testing method: {name} ({list(self.methods.keys()).index(name)+1}/{total}) ===")
+            # Pass artifact_markers if available
+            method.fit(self.data.raw_data, artifact_markers=self.data.artifact_markers)
             self.cleaned_signals[name] = method.transform(self.data.raw_data)
             self.results[name] = self.evaluate(
                 ground_truth=self.data.ground_truth,
@@ -81,6 +82,8 @@ class MethodTester:
         if not self.cleaned_signals:
             print("No cleaned signals to plot.")
             return
+
+        print(f"\nPlotting results for channel {channel}...")
 
         fig, axes = plt.subplots(len(self.cleaned_signals) + 1, 1, figsize=(15, 10), sharex=True)
         

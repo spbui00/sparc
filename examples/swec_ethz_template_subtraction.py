@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pickle
 from sparc import Evaluator, AverageTemplateSubtraction
+from sparc.core.signal_data import ArtifactTriggers
 from tqdm import tqdm
 from scipy import signal as sp_signal
 
@@ -161,7 +162,8 @@ def demonstrate_swec_ethz_template_subtraction():
         print("Could not load SWEC-ETHZ data. Please ensure the dataset is available.")
         return None, None
 
-    known_artifact_indices = [np.abs(artifacts[i]) > 1e-9 for i in range(artifacts.shape[0])] 
+    artifact_indices = [np.where(np.abs(artifacts[i, :, 0]) > 1e-9)[0] for i in range(artifacts.shape[0])]
+    known_artifact_markers = ArtifactTriggers(starts=np.array(artifact_indices, dtype=object))
     
     methods = {
         'Simple Average': AverageTemplateSubtraction(
@@ -180,7 +182,7 @@ def demonstrate_swec_ethz_template_subtraction():
         print(f"\n--- Testing {method_name} ---")
 
         try:
-            method.fit(mixed_data, artifact_indices=known_artifact_indices)
+            method.fit(mixed_data, artifact_markers=known_artifact_markers)
             cleaned = method.transform(mixed_data)
             cleaned_signals[method_name] = cleaned
             

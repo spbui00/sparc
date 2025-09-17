@@ -4,7 +4,7 @@ from sparc.methods import BackwardTemplateSubtraction
 
 def main():
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
+    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_1_1024.npz', sampling_rate=30000)
     
     tester = MethodTester(
         data=data,
@@ -30,8 +30,8 @@ def main():
 
     tester.run()
     tester.print_results()
-    tester.plot_results()
     tester.compare()
+    tester.plot_results()
 
 
 if __name__ == "__main__":

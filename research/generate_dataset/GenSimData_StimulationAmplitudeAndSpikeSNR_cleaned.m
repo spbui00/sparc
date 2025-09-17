@@ -49,8 +49,8 @@ ArtifactLevel100uA = 3000; % uV
 RawDataSampleRate = 30000;
 SampleTime = 1/RawDataSampleRate;
 
-NumRecordingArray = 1; % the recording array index. Define how many recording arrays to be simulated
-RecordingElecPerArray = 1; % the recording electrode index
+NumRecordingArray = 16; % the recording array index. Define how many recording arrays to be simulated
+RecordingElecPerArray = 64; % the recording electrode index
 
 SpatialActivationThreshold = 0.01; % For every recording electrode, we simply assume a range of stimulation induced activity on the cortex that following a profile (e.g. 2D Gaussian) when the profile value is lower than this threshold, there is no effect of stimulation on this electrode.
 ActivationThreshold = 0.01;
@@ -110,7 +110,7 @@ end
 % build electrode data tensor
 % build electrode spike train
 SimFR = zeros(LastTimeStampIdx/RawDataSampleRate*1000,RecordingElecPerArray,NumRecordingArray);
-SimSpikeTrain = zeros(ceil(NumFrames*FrameTime*RawDataSampleRate),RecordingElecPerArray,NumRecordingArray); % ms
+SimSpikeTrain = false(ceil(NumFrames*FrameTime*RawDataSampleRate),RecordingElecPerArray,NumRecordingArray); % ms
 SimLFP = zeros(LastTimeStampIdx,RecordingElecPerArray,NumRecordingArray);
 SimBB = zeros(LastTimeStampIdx,RecordingElecPerArray,NumRecordingArray);
 SimArtifact = zeros(LastTimeStampIdx,RecordingElecPerArray,NumRecordingArray);
@@ -210,7 +210,7 @@ for StimArray = StimulatedArray % for each stimulating array
                 SpikeTime(idx) = [];
                 SpikeTrain = zeros(size(SpikeTrain));
                 SpikeTrain(SpikeTime) = 1;
-                SpikeTrain = double(logical(SpikeTrain) | logical(SimSpikeTrain(:,thisElectrode,thisArray)));
+                SpikeTrain = logical(SpikeTrain) | SimSpikeTrain(:,thisElectrode,thisArray);
                 % ISI
                 SpikeTime = find(SpikeTrain > 0);
                 SpikeTimeDiff = diff(SpikeTime);
@@ -499,7 +499,7 @@ end
 
 
 SimCombined = SimBB + SimArtifact;
-save('./SimulatedData.mat','AllStimIdx','SimFR','SimSpikeTrain','SimLFP','SimBB','SimArtifact','SimCombined','StimParam','AllSNR')
+save('./SimulatedData.mat','AllStimIdx','SimFR','SimSpikeTrain','SimLFP','SimBB','SimArtifact','SimCombined','StimParam','AllSNR', '-v7.3')
 
 function y = pinknoise(m, n)
 % function: y = pinknoise(m, n)

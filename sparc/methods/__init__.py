@@ -3,9 +3,11 @@ from .template_subtraction import (
     BackwardTemplateSubtraction,
 )
 from .interpolation import LinearInterpolation
+from .decomposition import ERAASR
 
 __all__ = [
     "BaseTemplateSubtraction",
     "BackwardTemplateSubtraction",
     "LinearInterpolation",
+    "ERAASR",
 ]

@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Optional
 from abc import ABC, abstractmethod
+from ...core.signal_data import ArtifactMarkers, ArtifactTriggers
 from ...core.base_method import BaseSACMethod
 
 class BaseTemplateSubtraction(BaseSACMethod, ABC):
@@ -38,8 +39,10 @@ class BaseTemplateSubtraction(BaseSACMethod, ABC):
         self.pre_samples = int(self.pre_ms * self.sampling_rate / 1000)
         self.post_samples = int(self.post_ms * self.sampling_rate / 1000)
 
-    def fit(self, data: np.ndarray, artifact_indices: np.ndarray) -> 'BaseTemplateSubtraction':
-        self.template_indices_ = artifact_indices
+    def fit(self, data: np.ndarray, artifact_markers: ArtifactMarkers) -> 'BaseTemplateSubtraction':
+        if not isinstance(artifact_markers, ArtifactTriggers):
+            raise TypeError("This method requires ArtifactTriggers")
+        self.template_indices_ = artifact_markers.starts
         
         self.templates_ = self._learn_templates(data)
         self.is_fitted = True

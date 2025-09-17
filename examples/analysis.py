@@ -2,8 +2,16 @@ from sparc import DataHandler, NeuralAnalyzer
 
 def main():
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat')
-    
+    # data = data_handler.load_swec_ethz(
+    #     mixed_data_path="../research/datasets/SWEC-ETHZ/mixed_signal.npy",
+    #     ground_truth_path="../research/datasets/SWEC-ETHZ/gt.npy",
+    #     artifact_path="../research/datasets/SWEC-ETHZ/artifacts.npy",
+    #     sampling_rate=2000,
+    #     stim_rate=1000
+    # )
+
+    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
+
     analyzer = NeuralAnalyzer(sampling_rate=data.sampling_rate)
     
     spikes = analyzer.extract_spikes(data.raw_data)

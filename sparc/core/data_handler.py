@@ -4,19 +4,35 @@ import scipy.io
 from scipy import signal
 import h5py
 import pickle
-from sparc.core.signal_data import SignalData, SimulatedData, ArtifactTriggers, ArtifactWindows
+from sparc.core.signal_data import SignalData, SignalDataWithGroundTruth, SimulatedData, ArtifactTriggers, ArtifactWindows
 from sparc.utils.generate_artifacts import generate_synthetic_artifacts, resample_signal, generate_sine_exp_decay_artifact
 
 
 class DataHandler:
-    def _to_2d_array(self, value) -> np.ndarray:
-        arr = np.array(value)
-        
-        if arr.ndim == 0:
-            return arr.reshape(1, 1)
-        if arr.ndim == 1:
-            return arr.reshape(-1, 1)
-        return arr
+    def _standardize_shape(self, arr: np.ndarray, source_format: str) -> np.ndarray:
+        arr = np.array(arr)
+        arr = arr.squeeze() 
+
+        if source_format == 'simulated':
+            if arr.ndim == 0:
+                return arr.reshape(1, 1, 1)
+            if arr.ndim == 1: # (timesteps,) -> (1, timesteps, 1)
+                return arr.reshape(1, -1, 1)
+            elif arr.ndim == 2: # (timesteps, channels) -> (1, timesteps, channels)
+                return arr[np.newaxis, :, :]
+            elif arr.ndim == 3: # (timesteps, d1, d2) -> (1, timesteps, d1*d2)
+                reshaped_2d = arr.reshape(arr.shape[0], -1)
+                return reshaped_2d[np.newaxis, :, :]
+            else:
+                raise ValueError(f"Unsupported shape for simulated data: {arr.shape}")
+
+        elif source_format == 'swec' or source_format =='eraasr':
+            if arr.ndim == 3:
+                return arr.transpose(0, 2, 1)
+            else:
+                raise ValueError(f"data must be 3D. Got shape: {arr.shape}")
+
+        raise ValueError(f"Unknown source format: {source_format}")
 
     def load_npz_data(self, filepath: str) -> dict:
         return np.load(filepath)
@@ -51,28 +67,23 @@ class DataHandler:
                 data = self.load_matlab_data(filepath)
             print("Loaded keys from .mat file:", list(data.keys()))
 
-            gt = self._to_2d_array(data['SimBB'])
-            artifacts = self._to_2d_array(data['SimArtifact'])
-            mixed = self._to_2d_array(data['SimCombined'])
-            sampling_rate = sampling_rate if sampling_rate is not None else 30000
+            data = self.load_matlab_data(filepath)
             
-            # AllStimIdx is 1-indexed in MATLAB, convert to 0-indexed for Python
+            gt = self._standardize_shape(data['SimBB'], 'simulated')
+            artifacts = self._standardize_shape(data['SimArtifact'], 'simulated')
+            mixed = self._standardize_shape(data['SimCombined'], 'simulated')
+            firing_rate = self._standardize_shape(data['SimFR'], 'simulated')
+            spike_train = self._standardize_shape(data['SimSpikeTrain'], 'simulated')
+            lfp = self._standardize_shape(data['SimLFP'], 'simulated')
+            snr = self._standardize_shape(data['AllSNR'], 'simulated')
+
             raw_indices = data['AllStimIdx'].squeeze().astype(int)
             artifact_indices = raw_indices - 1
             artifact_markers = ArtifactTriggers(starts=artifact_indices)
             
-            print(f"Loaded {len(artifact_markers.starts)} artifact indices from MATLAB file")
-
-            # New fields for SimulatedData
-            firing_rate = self._to_2d_array(data['SimFR'])
-            spike_train = self._to_2d_array(data['SimSpikeTrain'])
-            lfp = self._to_2d_array(data['SimLFP'])
-            snr = self._to_2d_array(data['AllSNR'])
-            # stim_params = data['StimParam']
-
             return SimulatedData(
                 raw_data=mixed,
-                sampling_rate=sampling_rate,
+                sampling_rate=sampling_rate if sampling_rate is not None else 30000,
                 ground_truth=gt,
                 artifacts=artifacts,
                 artifact_markers=artifact_markers,
@@ -89,8 +100,36 @@ class DataHandler:
             print(f"Error: A required key is missing from the .mat file: {e}")
             raise
 
+    
+    def load_swec_ethz(
+        self,
+        mixed_data_path: str,
+        ground_truth_path: str,
+        artifact_path: str,
+        sampling_rate: float,
+        stim_rate: float
+    ) -> SignalDataWithGroundTruth:
+        mixed_data = np.load(mixed_data_path)
+        ground_truth_data = np.load(ground_truth_path)
+        artifact_data = np.load(artifact_path)
+
+        num_samples = mixed_data.shape[-1]
+        stim_period_samples = int(sampling_rate / stim_rate)
+        
+        start_indices = np.arange(0, num_samples, stim_period_samples)
+        
+        artifact_markers = ArtifactTriggers(starts=start_indices)
+        
+        return SignalDataWithGroundTruth(
+            raw_data=mixed_data,
+            sampling_rate=sampling_rate,
+            ground_truth=ground_truth_data,
+            artifacts=artifact_data,
+            artifact_markers=artifact_markers
+        )
+
+
     def load_eraasr_data(self, filepath: str, sampling_rate: Optional[int] = None) -> SignalData:
-        """Load ERAASR example data and add generated artifacts"""
         try:
             data = self.load_matlab_data(filepath)
             
@@ -140,3 +179,8 @@ class DataHandler:
                 artifact_windows.append((None, None))
 
         return ArtifactWindows(intervals=np.array(artifact_windows))
+
+
+    def add_artifacts(self, data: np.ndarray, sampling_rate: int, f_pulse=2500) -> np.ndarray:
+        artifacts = generate_synthetic_artifacts(data, sampling_rate, f_pulse=f_pulse)
+        return data + artifacts

@@ -49,8 +49,8 @@ ArtifactLevel100uA = 3000; % uV
 RawDataSampleRate = 30000;
 SampleTime = 1/RawDataSampleRate;
 
-NumRecordingArray = 16; % the recording array index. Define how many recording arrays to be simulated
-RecordingElecPerArray = 64; % the recording electrode index
+NumRecordingArray = 2; % the recording array index. Define how many recording arrays to be simulated
+RecordingElecPerArray = 16; % the recording electrode index
 
 SpatialActivationThreshold = 0.01; % For every recording electrode, we simply assume a range of stimulation induced activity on the cortex that following a profile (e.g. 2D Gaussian) when the profile value is lower than this threshold, there is no effect of stimulation on this electrode.
 ActivationThreshold = 0.01;

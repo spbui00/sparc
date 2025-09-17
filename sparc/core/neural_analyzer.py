@@ -11,46 +11,24 @@ class NeuralAnalyzer:
         
     def compute_psd(self, data: np.ndarray, method: str = 'welch',
                    nperseg: int = 256, noverlap: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
-        # Let scipy handle noverlap automatically to avoid conflicts when nperseg is adjusted
-        if noverlap is None:
-            noverlap = None  # Let scipy use its default (nperseg // 2)
-        else:
-            # If noverlap is explicitly provided, ensure it's valid
-            # Check if signal length is shorter than nperseg
-            signal_length = data.shape[0] if data.ndim == 1 else data.shape[0]
-            if signal_length < nperseg:
-                # When signal is shorter than nperseg, scipy will adjust nperseg
-                # So we should let noverlap be handled automatically
-                noverlap = None
-            
-        if method == 'welch':
-            freqs, psd = signal.welch(data, fs=self.sampling_rate, nperseg=nperseg,
-                                    noverlap=noverlap, axis=0)
-        elif method == 'periodogram':
-            freqs, psd = signal.periodogram(data, fs=self.sampling_rate, axis=0)
-        elif method == 'multitaper':
-            freqs, psd = signal.periodogram(data, fs=self.sampling_rate,
-                                          window=('dpss', 4), axis=0)
-        else:
-            raise ValueError(f"Unknown PSD method: {method}")
-            
-        return freqs, psd
+        if data.ndim != 3:
+            raise ValueError("Input data for compute_psd must be 3D (trials, timesteps, channels).")
+        all_psds = []
+        for trial_idx in range(data.shape[0]):
+            freqs, psd = signal.welch(data[trial_idx, :, :], fs=self.sampling_rate, nperseg=nperseg, axis=0)
+            all_psds.append(psd)
+        
+        # Average the PSDs across trials
+        avg_psd = np.mean(all_psds, axis=0)
+        return freqs, avg_psd
     
-    def compute_spectrogram(self, data: np.ndarray, channel: int = 0,
-                           nperseg: int = 256, noverlap: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-        # Let scipy handle noverlap automatically to avoid conflicts when nperseg is adjusted
-        if noverlap is None:
-            noverlap = None  # Let scipy use its default (nperseg // 2)
-        else:
-            # If noverlap is explicitly provided, ensure it's valid
-            signal_length = data.shape[0]
-            if signal_length < nperseg:
-                # When signal is shorter than nperseg, scipy will adjust nperseg
-                # So we should let noverlap be handled automatically
-                noverlap = None
-            
-        freqs, times, Sxx = signal.spectrogram(data[:, channel], fs=self.sampling_rate,
-                                              nperseg=nperseg, noverlap=noverlap)
+    def compute_spectrogram(self, data: np.ndarray, trial_idx: int = 0, channel: int = 0, nperseg: int = 256) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
+        
+        # Select the specific trial to analyze
+        trial_data = data[trial_idx, :, channel]
+        freqs, times, Sxx = signal.spectrogram(trial_data, fs=self.sampling_rate, nperseg=nperseg)
         return freqs, times, Sxx
     
     def compute_wavelet_transform(self, data: np.ndarray, channel: int = 0,
@@ -178,166 +156,111 @@ class NeuralAnalyzer:
             
         return coherence
 
-    def extract_lfp(self, data: np.ndarray, cutoff_freq: float = 200.0, target_fs: int = 500) -> np.ndarray:
-        """
-        Extract Local Field Potential (LFP) by low-pass filtering and down-sampling.
+    def extract_lfp(self, data: np.ndarray, cutoff_freq: float = 200.0) -> np.ndarray:
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
         
-        Args:
-            data: Neural data array (timesteps, channels)
-            cutoff_freq: Low-pass filter cutoff frequency (Hz)
-            target_fs: Target sampling rate for down-sampling (Hz)
-            
-        Returns:
-            LFP signal
-        """
-        # Low-pass filter
+        # Apply filter along the time axis (axis=1)
         sos = signal.butter(4, cutoff_freq, btype='low', fs=self.sampling_rate, output='sos')
-        lfp_data = signal.sosfilt(sos, data, axis=0)
-        
-        # Down-sample
-        downsample_factor = int(self.sampling_rate / target_fs)
-        if downsample_factor > 1:
-            lfp_data = signal.decimate(lfp_data, downsample_factor, axis=0)
-            
+        lfp_data = signal.sosfiltfilt(sos, data, axis=1)
         return lfp_data
 
     def extract_mua(self, data: np.ndarray, high_pass_freq: float = 250.0, low_pass_freq: float = 5000.0,
                     lfp_cutoff_freq: float = 200.0, target_fs: int = 1000) -> np.ndarray:
-        """
-        Extract Multi-Unit Activity (MUA).
-        
-        Args:
-            data: Neural data array (timesteps, channels)
-            high_pass_freq: High-pass filter cutoff frequency (Hz)
-            low_pass_freq: Low-pass filter cutoff frequency (Hz)
-            lfp_cutoff_freq: Low-pass filter cutoff for rectified signal (Hz)
-            target_fs: Target sampling rate for down-sampling (Hz)
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
             
-        Returns:
-            MUA signal
-        """
-        # Band-pass filter
+        # Band-pass filter along the time axis (axis=1)
         sos_bp = signal.butter(4, [high_pass_freq, low_pass_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
-        mua_data = signal.sosfilt(sos_bp, data, axis=0)
+        mua_data = signal.sosfiltfilt(sos_bp, data, axis=1)
         
         mua_data = np.abs(mua_data)
         
-        # Low-pass filter
+        # Low-pass filter along the time axis (axis=1)
         sos_lp = signal.butter(4, lfp_cutoff_freq, btype='low', fs=self.sampling_rate, output='sos')
-        mua_data = signal.sosfilt(sos_lp, mua_data, axis=0)
-        
-        # Down-sample
-        downsample_factor = int(self.sampling_rate / target_fs)
-        if downsample_factor > 1:
-            mua_data = signal.decimate(mua_data, downsample_factor, axis=0)
-            
+        mua_data = signal.sosfiltfilt(sos_lp, mua_data, axis=1)
         return mua_data
 
-    def extract_spikes(self, data: np.ndarray, threshold_factor: float = 4.0, 
-                       pre_ms: float = 0.4, post_ms: float = 1.2) -> List[List[Dict[str, Any]]]:
-        """
-        Extract spikes from the data.
-        
-        Args:
-            data: Neural data array (timesteps, channels)
-            threshold_factor: Factor to multiply RMS by for thresholding.
-            pre_ms: Time before spike peak to include in waveform (ms).
-            post_ms: Time after spike peak to include in waveform (ms).
+    def extract_spikes(self, data: np.ndarray, threshold_factor: float = 4.0, pre_ms: float = 0.4, post_ms: float = 1.2) -> List[List[List[Dict[str, Any]]]]:
+        if data.ndim != 3:
+            raise ValueError("Input data for extract_spikes must be 3D (trials, timesteps, channels).")
             
-        Returns:
-            A list of lists of dictionaries, where each inner list corresponds to a channel
-            and each dictionary contains information about a single spike ('index', 'amplitude', 'waveform').
-        """
         pre_samples = int(self.sampling_rate * pre_ms / 1000)
         post_samples = int(self.sampling_rate * post_ms / 1000)
         
-        all_spikes = []
-        for ch in range(data.shape[1]):
-            channel_data = data[:, ch]
-            
-            # Band-pass filter to emphasize spikes (adapt to sampling rate)
-            nyquist = self.sampling_rate / 2
-            low_freq = min(250, nyquist * 0.1)  # At least 10% of Nyquist
-            high_freq = min(5000, nyquist * 0.9)  # At most 90% of Nyquist
-            
-            if high_freq <= low_freq:
-                # If we can't create a proper bandpass, use highpass only
-                if low_freq < nyquist * 0.9:
-                    sos = signal.butter(4, low_freq, btype='highpass', fs=self.sampling_rate, output='sos')
-                else:
-                    # Very low sampling rate, just use the raw data
-                    filtered_data = channel_data
-                    sos = None
-            else:
-                sos = signal.butter(4, [low_freq, high_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
-            
-            if sos is not None:
-                filtered_data = signal.sosfilt(sos, channel_data)
-            else:
-                filtered_data = channel_data
-            
-            # Calculate threshold
-            rms = np.sqrt(np.mean(filtered_data**2))
-            detection_threshold = threshold_factor * rms
-            
-            # Find peaks exceeding threshold
-            # Minimum distance between spikes (at least 1ms, but ensure >= 1 sample)
-            min_distance = max(1, int(self.sampling_rate / 1000))  # 1ms minimum # TODO: verify
-            spike_indices, _ = signal.find_peaks(np.abs(filtered_data), height=detection_threshold, distance=min_distance)
-            
-            channel_spikes = []
-            for idx in spike_indices:
-                if idx - pre_samples >= 0 and idx + post_samples < len(channel_data):
-                    waveform = channel_data[idx - pre_samples : idx + post_samples]
-                    spike_info = {
-                        'index': idx,
-                        'amplitude': channel_data[idx],
-                        'waveform': waveform
-                    }
-                    channel_spikes.append(spike_info)
-            all_spikes.append(channel_spikes)
-            
-        return all_spikes
-    
-    def plot_spectral_analysis(self, data: np.ndarray, channel: int = 0,
-                              title: str = "Spectral Analysis", 
-                              save_path: Optional[str] = None):
-        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
-        fig.suptitle(f"{title} - Channel {channel}")
+        sos = signal.butter(4, [250, 5000], btype='bandpass', fs=self.sampling_rate, output='sos')
         
+        all_trials_spikes = []
+        for trial_idx in range(data.shape[0]):
+            all_channels_spikes = []
+            for ch_idx in range(data.shape[2]):
+                channel_data = data[trial_idx, :, ch_idx]
+                
+                filtered_data = signal.sosfiltfilt(sos, channel_data)
+                
+                rms = np.sqrt(np.mean(filtered_data**2))
+                detection_threshold = threshold_factor * rms
+                min_distance = max(1, int(self.sampling_rate / 1000))
+                
+                spike_indices, _ = signal.find_peaks(np.abs(filtered_data), height=detection_threshold, distance=min_distance)
+                
+                channel_spikes = []
+                for idx in spike_indices:
+                    if idx - pre_samples >= 0 and idx + post_samples < len(channel_data):
+                        waveform = channel_data[idx - pre_samples : idx + post_samples]
+                        spike_info = {
+                            'index': idx,
+                            'amplitude': channel_data[idx],
+                            'waveform': waveform
+                        }
+                        channel_spikes.append(spike_info)
+                all_channels_spikes.append(channel_spikes)
+            all_trials_spikes.append(all_channels_spikes)
+            
+        return all_trials_spikes
+    
+    def plot_spectral_analysis(self, data: np.ndarray, trial_idx: int = 0, channel_idx: int = 0,
+                           title: str = "Spectral Analysis", save_path: Optional[str] = None):
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
+        
+        # Check if selected trial and channel are valid
+        if trial_idx >= data.shape[0]:
+            raise IndexError(f"trial_idx {trial_idx} is out of bounds for data with {data.shape[0]} trials.")
+        if channel_idx >= data.shape[2]:
+            raise IndexError(f"channel_idx {channel_idx} is out of bounds for data with {data.shape[2]} channels.")
+
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
+        
+        trial_data_2d = data[trial_idx, :, :]
+        channel_data_1d = trial_data_2d[:, channel_idx]
+
         # Time series
-        time_axis = np.arange(data.shape[0]) / self.sampling_rate
-        axes[0, 0].plot(time_axis, data[:, channel])
+        time_axis = np.arange(trial_data_2d.shape[0]) / self.sampling_rate
+        axes[0, 0].plot(time_axis, channel_data_1d)
         axes[0, 0].set_title('Time Series')
         axes[0, 0].set_xlabel('Time (s)')
         axes[0, 0].set_ylabel('Amplitude')
         axes[0, 0].grid(True)
         
-        # PSD
-        freqs, psd = self.compute_psd(data)
-        axes[0, 1].semilogy(freqs, psd[:, channel])
+        single_trial_3d = data[np.newaxis, trial_idx, :, :]
+        freqs, psd = self.compute_psd(single_trial_3d)
+        axes[0, 1].semilogy(freqs, psd[:, channel_idx])
         axes[0, 1].set_title('Power Spectral Density')
         axes[0, 1].set_xlabel('Frequency (Hz)')
         axes[0, 1].set_ylabel('Power')
         axes[0, 1].grid(True)
         
         # Spectrogram
-        freqs_spec, times_spec, Sxx = self.compute_spectrogram(data, channel)
+        freqs_spec, times_spec, Sxx = self.compute_spectrogram(data, trial_idx=trial_idx, channel=channel_idx)
         im = axes[1, 0].pcolormesh(times_spec, freqs_spec, 10 * np.log10(Sxx), shading='gouraud')
         axes[1, 0].set_title('Spectrogram')
         axes[1, 0].set_xlabel('Time (s)')
         axes[1, 0].set_ylabel('Frequency (Hz)')
         plt.colorbar(im, ax=axes[1, 0], label='Power (dB)')
         
-        # Wavelet transform
-        # freqs_wav, times_wav, power_wav = self.compute_wavelet_transform(data, channel)
-        # im2 = axes[1, 1].pcolormesh(times_wav, freqs_wav, power_wav, shading='gouraud')
-        # axes[1, 1].set_title('Wavelet Transform')
-        # axes[1, 1].set_xlabel('Time (s)')
-        # axes[1, 1].set_ylabel('Frequency (Hz)')
-        # axes[1, 1].set_yscale('log')
-        # plt.colorbar(im2, ax=axes[1, 1], label='Power')
-        
+        # ... (rest of the function is the same) ...
         plt.tight_layout()
         
         if save_path:

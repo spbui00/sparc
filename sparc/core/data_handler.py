@@ -5,7 +5,6 @@ from scipy import signal
 import h5py
 import pickle
 from sparc.core.signal_data import SignalData, SignalDataWithGroundTruth, SimulatedData, ArtifactTriggers, ArtifactWindows
-from sparc.utils.generate_artifacts import generate_synthetic_artifacts, resample_signal, generate_sine_exp_decay_artifact
 
 
 class DataHandler:
@@ -22,7 +21,8 @@ class DataHandler:
                 return arr[np.newaxis, :, :]
             elif arr.ndim == 3: # (timesteps, d1, d2) -> (1, timesteps, d1*d2)
                 reshaped_2d = arr.reshape(arr.shape[0], -1)
-                return reshaped_2d[np.newaxis, :, :]
+                transposed = reshaped_2d.T
+                return transposed[np.newaxis, :, :]
             else:
                 raise ValueError(f"Unsupported shape for simulated data: {arr.shape}")
 
@@ -67,8 +67,6 @@ class DataHandler:
                 data = self.load_matlab_data(filepath)
             print("Loaded keys from .mat file:", list(data.keys()))
 
-            data = self.load_matlab_data(filepath)
-            
             gt = self._standardize_shape(data['SimBB'], 'simulated')
             artifacts = self._standardize_shape(data['SimArtifact'], 'simulated')
             mixed = self._standardize_shape(data['SimCombined'], 'simulated')
@@ -180,8 +178,3 @@ class DataHandler:
                 artifact_windows.append((None, None))
 
         return ArtifactWindows(intervals=np.array(artifact_windows))
-
-
-    def add_artifacts(self, data: np.ndarray, sampling_rate: int, f_pulse=2500) -> np.ndarray:
-        artifacts = generate_synthetic_artifacts(data, sampling_rate, f_pulse=f_pulse)
-        return data + artifacts

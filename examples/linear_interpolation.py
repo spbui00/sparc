@@ -4,7 +4,7 @@ from sparc import DataHandler, MethodTester
 
 def main():
     data_handler = DataHandler()
-    data = data_handler.load_simulated_data('../research/generate_dataset/SimulatedData_2.mat', sampling_rate=30000)
+    data = data_handler.load_simulated_data('../data/simulated_data_2x64_30000.npz', sampling_rate=30000)
 
     window_sizes = [0.0001]
     margins = [0.1, 0.2, 0.3]

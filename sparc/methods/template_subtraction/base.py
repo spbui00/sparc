@@ -8,23 +8,18 @@ from ...core.base_method import BaseSACMethod
 
 class BaseTemplateSubtraction(BaseSACMethod, ABC):
     def __init__(self,
-                 sampling_rate: Optional[float] = None,
                  template_length_ms: float = 5.0,
                  pre_ms: float = 0.8,
                  post_ms: float = 1.0,
                  onset_threshold: float = 1.5,
                  detection_method: str = 'gradient',  # 'gradient' or 'amplitude'
                  **kwargs):
-        super().__init__(sampling_rate, **kwargs)
+        super().__init__(**kwargs)
         self.template_length_ms = template_length_ms
         self.pre_ms = pre_ms
         self.post_ms = post_ms
         self.onset_threshold = onset_threshold
         self.detection_method = detection_method
-
-        if self.sampling_rate:
-            self._update_samples_from_ms()
-
         self.templates_ = None 
         self.template_indices_ = None
         self.is_fitted = False

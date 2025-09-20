@@ -12,7 +12,7 @@ class BaseSACMethod(ABC):
     All SAC methods should inherit from this class and implement the required methods.
     """
     
-    def __init__(self, sampling_rate: float, **kwargs):
+    def __init__(self, **kwargs):
         """
         Initialize the SAC method.
         
@@ -20,7 +20,7 @@ class BaseSACMethod(ABC):
             sampling_rate: Sampling rate of the neural data (Hz)
             **kwargs: Method-specific parameters
         """
-        self.sampling_rate = sampling_rate
+        self.sampling_rate = None
         self.params = kwargs
         self.is_fitted = False
 

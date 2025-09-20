@@ -77,7 +77,10 @@ class DataHandler:
 
             raw_indices = data['AllStimIdx'].squeeze().astype(int)
             artifact_indices = raw_indices - 1
-            artifact_markers = ArtifactTriggers(starts=artifact_indices)
+            num_channels = mixed.shape[1]
+            markers_for_one_trial = [artifact_indices for _ in range(num_channels)]
+            all_trials_markers = [markers_for_one_trial]
+            artifact_markers = ArtifactTriggers(starts=all_trials_markers)
             
             return SimulatedData(
                 raw_data=mixed,
@@ -116,7 +119,7 @@ class DataHandler:
         
         start_indices = np.arange(0, num_samples, stim_period_samples)
         
-        artifact_markers = ArtifactTriggers(starts=start_indices)
+        artifact_markers = ArtifactTriggers(starts=[start_indices]) # TODO: change
         
         return SignalDataWithGroundTruth(
             raw_data=mixed_data,

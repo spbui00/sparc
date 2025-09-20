@@ -68,7 +68,7 @@ LFPspatialSigmaMean = [0.15 0]; % mm
 % SpikeTriggeredLFP parameters are inline, see code below
 
 
-ArtifactSimulationMethod = 2; % stimulation artifact simulation method. 1 = hand crafted, 2 = RC circuit simulation (very slow), 3 = from real data
+ArtifactSimulationMethod = 1; % stimulation artifact simulation method. 1 = hand crafted, 2 = RC circuit simulation (very slow), 3 = from real data
 
 minISI = 0.1; % ms, MUA
 FRscaleFactor = 3; % MUA

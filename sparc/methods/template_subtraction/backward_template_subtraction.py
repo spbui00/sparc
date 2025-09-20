@@ -1,5 +1,7 @@
 import numpy as np
 from typing import Dict
+
+from sparc.core.signal_data import ArtifactMarkers
 from .base import BaseTemplateSubtraction
 
 
@@ -16,37 +18,40 @@ class BackwardTemplateSubtraction(BaseTemplateSubtraction):
         template_length = self.template_length_samples
         
         if template_length == 0:
+            print("Template length is zero, skipping template subtraction.")
             return cleaned_data
 
-        template_length = self.template_length_samples
-        artifact_markers = self.template_indices_
+        try:
+            artifact_markers = self.template_indices_[trial_idx]
+        except IndexError:
+            print(f"Warning: trial_idx {trial_idx} is out of bounds for artifact markers. Returning trial unmodified.")
+            return cleaned_data
         
-        if isinstance(artifact_markers, list):
-            # If we have multiple trials, use the appropriate one
-            # For now, assuming single trial or using first trial's indices
-            artifact_markers = artifact_markers[0] if len(artifact_markers) > 0 else artifact_markers
-        
-        if not isinstance(artifact_markers, np.ndarray):
-            artifact_markers = np.array(artifact_markers)
-        
-        for ch in range(data.shape[1]):
-            signal_ch = data[:, ch]
+        for ch in range(data.shape[0]):
+            signal_ch = data[ch, :]
+            this_channel_markers = artifact_markers[ch]
+
+            if this_channel_markers.size == 0:
+                continue
             
-            # Process each artifact location
-            for i, artifact_idx in enumerate(artifact_markers):
+            for i, artifact_idx in enumerate(this_channel_markers):
+                if i == 0:
+                    continue
+
                 if artifact_idx + template_length > len(signal_ch):
                     continue
                 
-                if i >= self.num_templates_for_avg:
-                    templates = []
-                    for k in range(self.num_templates_for_avg):
-                        prev_idx = artifact_markers[i - k - 1]
-                        if prev_idx + template_length <= len(signal_ch):
-                            templates.append(signal_ch[prev_idx:prev_idx + template_length])
+                num_available_templates = min(i, self.num_templates_for_avg)
+                
+                templates = []
+                for k in range(num_available_templates):
+                    prev_idx = this_channel_markers[i - k - 1]
+                    if prev_idx + template_length <= len(signal_ch):
+                        templates.append(signal_ch[prev_idx:prev_idx + template_length])
+                
+                if templates:
+                    avg_template = np.mean(np.array(templates), axis=0)
                     
-                    if templates:
-                        avg_template = np.mean(np.array(templates), axis=0)
-                        # Subtract the average template at the current artifact location
-                        cleaned_data[artifact_idx:artifact_idx + template_length, ch] -= avg_template
-    
+                    cleaned_data[ch, artifact_idx:artifact_idx + template_length] -= avg_template
+                
         return cleaned_data

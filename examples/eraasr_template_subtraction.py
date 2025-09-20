@@ -39,8 +39,6 @@ def main():
         print(f"  Overall Power Reduction: {result['power_reduction']:.2f}%")
         print(f"  LFP Power Reduction: {result['lfp_power_reduction']:.2f}%")
         print(f"  MUA Power Reduction: {result['mua_power_reduction']:.2f}%")
-        if "mse" in result:
-            print(f"  MSE: {result['mse']:.2f}")
         if "spike_metrics" in result:
             print("  Spike Metrics (Channel 0):")
             metrics = result['spike_metrics']['channel_0']

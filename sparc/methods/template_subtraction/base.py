@@ -1,8 +1,10 @@
 import numpy as np
 from typing import Optional
+import warnings
 from abc import ABC, abstractmethod
 from ...core.signal_data import ArtifactMarkers, ArtifactTriggers
 from ...core.base_method import BaseSACMethod
+
 
 class BaseTemplateSubtraction(BaseSACMethod, ABC):
     def __init__(self,
@@ -35,6 +37,17 @@ class BaseTemplateSubtraction(BaseSACMethod, ABC):
     def _update_samples_from_ms(self):
         if not self.sampling_rate:
             raise ValueError("Sampling rate must be set before updating sample values.")
+        calculated_samples = self.template_length_ms * self.sampling_rate / 1000
+        
+        if calculated_samples < 1.0:
+            warnings.warn(
+                f"template_length_ms ({self.template_length_ms}ms) is shorter than one sample "
+                f"at {self.sampling_rate}Hz. Clamping to a minimum of 1 sample."
+            )
+            self.template_length_samples = 1
+        else:
+            self.template_length_samples = int(calculated_samples)
+
         self.template_length_samples = int(self.template_length_ms * self.sampling_rate / 1000)
         self.pre_samples = int(self.pre_ms * self.sampling_rate / 1000)
         self.post_samples = int(self.post_ms * self.sampling_rate / 1000)
@@ -55,16 +68,13 @@ class BaseTemplateSubtraction(BaseSACMethod, ABC):
     def transform(self, data: np.ndarray) -> np.ndarray:
         if not self.is_fitted:
             raise ValueError("Method must be fitted before transforming data.")
+        if data.ndim != 3:
+            raise ValueError("Input data must be a 3D numpy array (trials, channels, timepoints).")
 
-        if data.ndim == 2:  # (timesteps, channels)
-            return self._apply_template_subtraction_single_trial(data, 0)
-        elif data.ndim == 3:  # (trials, timesteps, channels)
-            cleaned_data = np.zeros_like(data)
-            for trial_idx in range(data.shape[0]):
-                cleaned_data[trial_idx] = self._apply_template_subtraction_single_trial(data[trial_idx], trial_idx)
-            return cleaned_data
-        else:
-            raise ValueError(f"Unsupported data dimension: {data.ndim}")
+        cleaned_data = np.zeros_like(data)
+        for trial_idx in range(data.shape[0]):
+            cleaned_data[trial_idx] = self._apply_template_subtraction_single_trial(data[trial_idx], trial_idx)
+        return cleaned_data
 
     @abstractmethod
     def _apply_template_subtraction_single_trial(self, data: np.ndarray, trial_idx: int) -> np.ndarray:

@@ -248,6 +248,36 @@ class NeuralPlotter:
         plt.tight_layout()
         plt.show()
 
+    def plot_cleaned_comparison(self, ground_truth: np.ndarray, mixed_data: np.ndarray, cleaned_data: np.ndarray, trial_idx: int, channel_idx: int, title: Optional[str] = None):
+        if ground_truth.ndim != 3 or mixed_data.ndim != 3 or cleaned_data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
+        if ground_truth.shape != mixed_data.shape or ground_truth.shape != cleaned_data.shape:
+            raise ValueError("Shapes of ground_truth, mixed_data, and cleaned_data must be the same.")
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+        
+        # Extract traces
+        gt_trace = ground_truth[trial_idx, channel_idx, :]
+        mixed_trace = mixed_data[trial_idx, channel_idx, :]
+        cleaned_trace = cleaned_data[trial_idx, channel_idx, :]
+        
+        time_axis = np.arange(gt_trace.shape[0]) / self.sampling_rate 
+        
+        ax.plot(time_axis, mixed_trace, color=self.color_theme['grid'], linewidth=1, label='Mixed Data')
+        ax.plot(time_axis, cleaned_trace, color=self.color_theme['mean'], linewidth=1, label='Cleaned Data')
+        ax.plot(time_axis, gt_trace, color=self.color_theme['spike'], linewidth=1, label='Ground Truth')
+        
+        ax.set_title(title or f"Comparison - Trial {trial_idx}, Channel {channel_idx}")
+        ax.set_xlabel("Time (s)")
+        ax.set_ylabel("Amplitude (µV)")
+        ax.grid(True, color=self.color_theme['grid'], linestyle='--')
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.legend()
+        
+        plt.tight_layout()
+        plt.show()
+
     def plot_channel_average_comparison(self, ground_truth: np.ndarray, mixed_data: np.ndarray, channel_idx: int, title: Optional[str] = None):
         if ground_truth.ndim != 3 or mixed_data.ndim != 3:
             raise ValueError("Input data must be 3D (trials, channels, timesteps).")
@@ -304,21 +334,3 @@ class NeuralPlotter:
         plt.tight_layout()
         plt.show()
 
-# --- Example Usage ---
-# if __name__ == "__main__":
-#     # Assuming you have a 'data' object with shape (trials, timesteps, channels)
-#     # and a sampling_rate
-#
-#     analyzer = NeuralAnalyzer(sampling_rate=data.sampling_rate)
-#     plotter = NeuralPlotting(analyzer)
-#
-#     # 1. Plot a single trial
-#     plotter.plot_trial_channel(data, trial_idx=0, channel_idx=5)
-#
-#     # 2. Plot the trial-averaged PSD
-#     plotter.plot_psd(data)
-#
-#     # 3. Extract spikes and plot raster and PSTH
-#     spikes = analyzer.extract_spikes(data)
-#     plotter.plot_spike_raster(spikes, channel_idx=5)
-#     plotter.plot_psth(spikes, channel_idx=5)

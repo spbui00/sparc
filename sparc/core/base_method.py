@@ -2,6 +2,9 @@ from abc import ABC, abstractmethod
 import numpy as np
 from typing import Dict, Any, Optional
 
+from .signal_data import ArtifactMarkers
+
+
 class BaseSACMethod(ABC):
     """
     Abstract base class for Stimulation Artifact Cancellation (SAC) methods.
@@ -27,7 +30,7 @@ class BaseSACMethod(ABC):
         return self
         
     @abstractmethod
-    def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None) -> 'BaseSACMethod':
+    def fit(self, data: np.ndarray, artifact_markers: Optional[ArtifactMarkers]) -> 'BaseSACMethod':
         """
         Fit the method to the data (e.g., learn templates, compute parameters).
         

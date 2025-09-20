@@ -1,66 +1,78 @@
 # SPARC/core/evaluator.py
 import numpy as np
-from typing import Dict
+from typing import Dict, Any
 from .neural_analyzer import NeuralAnalyzer
+
 
 class Evaluator(NeuralAnalyzer):
     def __init__(self, sampling_rate: float):
         super().__init__(sampling_rate)
 
-    def evaluate_spikes(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray, bin_width_ms: float = 0.1) -> Dict[str, float]:
-        """
-        Calculates the three key spike detection metrics: hit rate, miss rate,
-        and false positive rate.
-        """
-        if cleaned_signal.ndim != 3 or ground_truth_signal.ndim != 3:
-            raise ValueError("Input signals must be 3D (trials, timesteps, channels).")
+    
+    def evaluate_spikes(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray, bin_width_ms: float = 0.1) -> Dict[str, Any]:
+        if cleaned_signal.shape != ground_truth_signal.shape:
+            raise ValueError("Cleaned and ground truth signals must have the same shape.")
+        if cleaned_signal.ndim != 3:
+            raise ValueError("Input signals must be 3D (trials, channels, timesteps).")
 
-        # --- Concatenate trials to get a single performance score ---
-        num_channels = cleaned_signal.shape[2]
-        cleaned_2d = cleaned_signal.reshape(-1, num_channels)
-        gt_2d = ground_truth_signal.reshape(-1, num_channels)
+        # Extract spikes for all trials and channels at once
+        spikes_cleaned = self.extract_spikes(cleaned_signal)
+        spikes_ground_truth = self.extract_spikes(ground_truth_signal)
 
-        # The rest of the logic can now proceed as it did for 2D data
-        # by analyzing the first channel of the concatenated signal.
-        cleaned_ch0 = cleaned_2d[:, 0]
-        gt_ch0 = gt_2d[:, 0]
-        
-        # Reshape to (samples, 1) for extract_spikes
-        spikes_cleaned_list = self.extract_spikes(cleaned_ch0.reshape(1, -1, 1))
-        spikes_ground_truth_list = self.extract_spikes(gt_ch0.reshape(1, -1, 1))
+        # Initialize counters for metrics across all channels
+        total_hits = 0
+        total_misses = 0
+        total_false_positives = 0
+        total_gt_spikes_all_channels = 0
+        total_gt_non_spikes_all_channels = 0
 
-        spikes_cleaned = spikes_cleaned_list[0][0]
-        spikes_ground_truth = spikes_ground_truth_list[0][0]
-            
-        duration_s = cleaned_2d.shape[0] / self.sampling_rate
+        num_trials, num_channels, num_timesteps = cleaned_signal.shape
+        duration_s = (num_trials * num_timesteps) / self.sampling_rate
         bin_width_s = bin_width_ms / 1000
-        num_bins = int(duration_s / bin_width_s)
+        num_bins_per_channel = int( (num_timesteps * num_trials) / self.sampling_rate / bin_width_s)
 
-        binned_cleaned = np.zeros(num_bins, dtype=bool)
-        binned_ground_truth = np.zeros(num_bins, dtype=bool)
+        # Loop through each channel to calculate and aggregate metrics
+        for ch in range(num_channels):
+            # Binning logic (applied per channel)
+            binned_cleaned = np.zeros(num_bins_per_channel, dtype=bool)
+            binned_gt = np.zeros(num_bins_per_channel, dtype=bool)
+            
+            # Note: Spike indices are relative to the start of their trial.
+            # We need to add the trial offset for proper binning.
+            for trial_idx, trial_spikes in enumerate(spikes_cleaned):
+                for spike in trial_spikes[ch]:
+                    global_index = trial_idx * num_timesteps + spike['index']
+                    bin_index = int(global_index / self.sampling_rate / bin_width_s)
+                    if bin_index < num_bins_per_channel:
+                        binned_cleaned[bin_index] = True
 
-        for spike in spikes_cleaned:
-            bin_index = int(spike['index'] / self.sampling_rate / bin_width_s)
-            if bin_index < num_bins:
-                binned_cleaned[bin_index] = True
+            for trial_idx, trial_spikes in enumerate(spikes_ground_truth):
+                for spike in trial_spikes[ch]:
+                    global_index = trial_idx * num_timesteps + spike['index']
+                    bin_index = int(global_index / self.sampling_rate / bin_width_s)
+                    if bin_index < num_bins_per_channel:
+                        binned_gt[bin_index] = True
 
-        for spike in spikes_ground_truth:
-            bin_index = int(spike['index'] / self.sampling_rate / bin_width_s)
-            if bin_index < num_bins:
-                binned_ground_truth[bin_index] = True
+            # Calculate metrics for this channel
+            hits = np.sum(binned_cleaned & binned_gt)
+            misses = np.sum(~binned_cleaned & binned_gt)
+            false_positives = np.sum(binned_cleaned & ~binned_gt)
+            total_gt_spikes = np.sum(binned_gt)
+            
+            # Aggregate results
+            total_hits += hits
+            total_misses += misses
+            total_false_positives += false_positives
+            total_gt_spikes_all_channels += total_gt_spikes
+            total_gt_non_spikes_all_channels += (num_bins_per_channel - total_gt_spikes)
 
-        hits = np.sum(binned_cleaned & binned_ground_truth)
-        misses = np.sum(~binned_cleaned & binned_ground_truth)
-        false_positives = np.sum(binned_cleaned & ~binned_ground_truth)
-
-        total_gt_spikes = np.sum(binned_ground_truth)
-        total_gt_non_spikes = num_bins - total_gt_spikes
-
-        hit_rate = hits / total_gt_spikes if total_gt_spikes > 0 else np.nan
-        miss_rate = misses / total_gt_spikes if total_gt_spikes > 0 else np.nan
-        fp_rate = false_positives / total_gt_non_spikes if total_gt_non_spikes > 0 else np.nan
+        # Calculate final rates from aggregated counts
+        hit_rate = total_hits / total_gt_spikes_all_channels if total_gt_spikes_all_channels > 0 else np.nan
+        miss_rate = total_misses / total_gt_spikes_all_channels if total_gt_spikes_all_channels > 0 else np.nan
+        fp_rate = total_false_positives / total_gt_non_spikes_all_channels if total_gt_non_spikes_all_channels > 0 else np.nan
         
         return {'hit_rate': hit_rate, 'miss_rate': miss_rate, 'false_positive_rate': fp_rate}
+
 
     def evaluate_lfp(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray) -> Dict[str, float]:
         if cleaned_signal.ndim != 3 or ground_truth_signal.ndim != 3:

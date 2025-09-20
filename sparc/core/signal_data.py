@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 import numpy as np
-from typing import Any, Optional
+from typing import Any, Optional, List
 from abc import ABC
 
 
@@ -12,12 +12,12 @@ class ArtifactMarkers(ABC):
 @dataclass
 class ArtifactTriggers(ArtifactMarkers):
     """Represents artifacts as a 1D array of trigger points (start times)."""
-    starts: np.ndarray # Shape: (n_artifacts,)
+    starts: List[List[np.ndarray]] # Shape: (n_artifacts,)
 
 @dataclass
 class ArtifactWindows(ArtifactMarkers):
     """Represents artifacts as a 2D array of [start, end] intervals."""
-    intervals: np.ndarray # Shape: (n_artifacts, 2)
+    intervals: List[List[np.ndarray]] # Shape: (n_artifacts, 2)
 
 
 @dataclass

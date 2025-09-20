@@ -9,17 +9,13 @@ class NeuralAnalyzer:
     def __init__(self, sampling_rate: float):
         self.sampling_rate = sampling_rate
         
-    def compute_psd(self, data: np.ndarray, method: str = 'welch',
-                   nperseg: int = 256, noverlap: Optional[int] = None) -> Tuple[np.ndarray, np.ndarray]:
+    def compute_psd(self, data: np.ndarray, nperseg: int = 256) -> Tuple[np.ndarray, np.ndarray]:
         if data.ndim != 3:
-            raise ValueError("Input data for compute_psd must be 3D (trials, timesteps, channels).")
-        all_psds = []
-        for trial_idx in range(data.shape[0]):
-            freqs, psd = signal.welch(data[trial_idx, :, :], fs=self.sampling_rate, nperseg=nperseg, axis=0)
-            all_psds.append(psd)
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
         
-        # Average the PSDs across trials
-        avg_psd = np.mean(all_psds, axis=0)
+        freqs, psd = signal.welch(data, fs=self.sampling_rate, nperseg=nperseg, axis=2)
+        
+        avg_psd = np.mean(psd, axis=0)
         return freqs, avg_psd
     
     def compute_spectrogram(self, data: np.ndarray, trial_idx: int = 0, channel: int = 0, nperseg: int = 256) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
@@ -158,63 +154,52 @@ class NeuralAnalyzer:
 
     def extract_lfp(self, data: np.ndarray, cutoff_freq: float = 200.0) -> np.ndarray:
         if data.ndim != 3:
-            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
         
-        # Apply filter along the time axis (axis=1)
         sos = signal.butter(4, cutoff_freq, btype='low', fs=self.sampling_rate, output='sos')
-        lfp_data = signal.sosfiltfilt(sos, data, axis=1)
+        lfp_data = signal.sosfiltfilt(sos, data, axis=2)
         return lfp_data
 
-    def extract_mua(self, data: np.ndarray, high_pass_freq: float = 250.0, low_pass_freq: float = 5000.0,
-                    lfp_cutoff_freq: float = 200.0, target_fs: int = 1000) -> np.ndarray:
+    def extract_mua(self, data: np.ndarray, high_pass_freq: float = 250.0, low_pass_freq: float = 5000.0) -> np.ndarray:
         if data.ndim != 3:
-            raise ValueError("Input data must be 3D (trials, timesteps, channels).")
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
             
-        # Band-pass filter along the time axis (axis=1)
+        # Band-pass filter along the time axis (axis=2)
         sos_bp = signal.butter(4, [high_pass_freq, low_pass_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
-        mua_data = signal.sosfiltfilt(sos_bp, data, axis=1)
+        mua_data = signal.sosfiltfilt(sos_bp, data, axis=2)
         
         mua_data = np.abs(mua_data)
         
-        # Low-pass filter along the time axis (axis=1)
-        sos_lp = signal.butter(4, lfp_cutoff_freq, btype='low', fs=self.sampling_rate, output='sos')
-        mua_data = signal.sosfiltfilt(sos_lp, mua_data, axis=1)
+        # Low-pass filter to get the envelope
+        sos_lp = signal.butter(4, 200.0, btype='low', fs=self.sampling_rate, output='sos')
+        mua_data = signal.sosfiltfilt(sos_lp, mua_data, axis=2)
         return mua_data
 
     def extract_spikes(self, data: np.ndarray, threshold_factor: float = 4.0, pre_ms: float = 0.4, post_ms: float = 1.2) -> List[List[List[Dict[str, Any]]]]:
         if data.ndim != 3:
-            raise ValueError("Input data for extract_spikes must be 3D (trials, timesteps, channels).")
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
             
         pre_samples = int(self.sampling_rate * pre_ms / 1000)
         post_samples = int(self.sampling_rate * post_ms / 1000)
         
-        nyquist = self.sampling_rate / 2
-        low_freq = 250
-        high_freq = 4000
-
-        # Ensure the high frequency cutoff is below the Nyquist frequency
-        if high_freq >= nyquist:
-            high_freq = nyquist * 0.95 # Use 95% of Nyquist to be safe
-            print(f"Warning: High frequency cutoff adjusted to {high_freq:.2f} Hz due to sampling rate.")
-
-        if high_freq <= low_freq:
-             raise ValueError(f"High frequency cutoff ({high_freq} Hz) must be greater than low frequency cutoff ({low_freq} Hz). Check sampling rate.")
-
-        sos = signal.butter(4, [low_freq, high_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
+        # Define filter once
+        sos = signal.butter(4, [250, 4000], btype='bandpass', fs=self.sampling_rate, output='sos')
+        
+        # Filter all data at once for efficiency
+        filtered_data_all = signal.sosfiltfilt(sos, data, axis=2)
         
         all_trials_spikes = []
         for trial_idx in range(data.shape[0]):
             all_channels_spikes = []
-            for ch_idx in range(data.shape[2]):
-                channel_data = data[trial_idx, :, ch_idx]
+            for ch_idx in range(data.shape[1]): 
+                channel_data = data[trial_idx, ch_idx, :]
+                filtered_channel_data = filtered_data_all[trial_idx, ch_idx, :]
                 
-                filtered_data = signal.sosfiltfilt(sos, channel_data)
-                
-                rms = np.sqrt(np.mean(filtered_data**2))
+                rms = np.sqrt(np.mean(filtered_channel_data**2))
                 detection_threshold = threshold_factor * rms
-                min_distance = max(1, int(self.sampling_rate / 1000))
+                min_distance = int(self.sampling_rate / 1000) # 1ms refractory period
                 
-                spike_indices, _ = signal.find_peaks(np.abs(filtered_data), height=detection_threshold, distance=min_distance)
+                spike_indices, _ = signal.find_peaks(np.abs(filtered_channel_data), height=detection_threshold, distance=min_distance)
                 
                 channel_spikes = []
                 for idx in spike_indices:

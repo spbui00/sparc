@@ -101,6 +101,32 @@ class DataHandler:
             print(f"Error: A required key is missing from the .mat file: {e}")
             raise
 
+    def load_concatenated_simulated_data(self, filepath: str, sampling_rate: Optional[int] = None) -> SimulatedData:
+        data = self.load_npz_data(filepath)
+        
+        mixed = data['SimCombined']
+        gt = data['SimBB']
+        artifacts = data['SimArtifact']
+        firing_rate = data['SimFR']
+        spike_train = data['SimSpikeTrain']
+        lfp = data['SimLFP']
+        snr = data['AllSNR']
+        
+        all_trials_markers = data['artifact_markers_starts']
+        artifact_markers = ArtifactTriggers(starts=all_trials_markers)
+        
+        return SimulatedData(
+            raw_data=mixed,
+            sampling_rate=sampling_rate if sampling_rate is not None else 30000,
+            ground_truth=gt,
+            artifacts=artifacts,
+            artifact_markers=artifact_markers,
+            firing_rate=firing_rate,
+            spike_train=spike_train,
+            lfp=lfp,
+            stim_params=None, 
+            snr=snr,
+        )
     
     def load_swec_ethz(
         self,

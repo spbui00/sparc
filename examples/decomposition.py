@@ -55,6 +55,8 @@ def main():
     tester = MethodTester(
         data=data,
         methods=methods,
+        save=True,
+        save_folder="../data/results/simulated/"
     )
 
     start_time = time.time()

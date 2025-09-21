@@ -1,13 +1,16 @@
+import numpy as np
+import json
+import os
+from typing import Dict, Any, Optional
+
 from .core.base_method import BaseSACMethod
 from .core.evaluator import Evaluator
 from .core.signal_data import SignalDataWithGroundTruth
 from .core.plotting import NeuralPlotter
-from typing import Dict, Any, Optional
-import numpy as np
 
 
 class MethodTester:
-    def __init__(self, data: SignalDataWithGroundTruth, methods: Dict[str, BaseSACMethod]):
+    def __init__(self, data: SignalDataWithGroundTruth, methods: Dict[str, BaseSACMethod], save: bool = False, save_folder: str = "./results"):
         """
         Args:
             data: A SignalDataWithGroundTruth object containing the data to test.
@@ -18,8 +21,9 @@ class MethodTester:
         self.results: Dict[str, Any] = {}
         self.evaluator = Evaluator(sampling_rate=self.data.sampling_rate)
         self.cleaned_signals = {}
+        self.save = save
+        self.save_folder = save_folder
 
-        # Set sampling rate for methods if not already set
         for method in self.methods.values():
             if method.sampling_rate is None:
                 method.set_sampling_rate(self.data.sampling_rate)
@@ -36,6 +40,11 @@ class MethodTester:
             print(f"\n=== Testing method: {name} ({list(self.methods.keys()).index(name)+1}/{total}) ===")
             method.fit(self.data.raw_data, artifact_markers=self.data.artifact_markers)
             self.cleaned_signals[name] = method.transform(self.data.raw_data)
+            if self.save:
+                os.makedirs(self.save_folder, exist_ok=True)
+                np.save(os.path.join(self.save_folder, f"{name}_cleaned.npy"), self.cleaned_signals[name])
+                with open(os.path.join(self.save_folder, f"{name}_config.json"), 'w') as f:
+                    json.dump(method.get_config(), f, indent=4)
             self.results[name] = self.evaluate(
                 ground_truth=self.data.ground_truth,
                 original_mixed=self.data.raw_data,
@@ -124,7 +133,6 @@ class MethodTester:
 
         method_scores = {name: 0.0 for name in self.results.keys()}
 
-        # --- CHANGE 3: New performance-based scoring logic ---
         for method_name, metrics in self.results.items():
             score = 0.0
             for metric_name, weight in weights.items():
@@ -150,7 +158,6 @@ class MethodTester:
             
             method_scores[method_name] = score
 
-        # Sort and print results
         sorted_scores = sorted(method_scores.items(), key=lambda item: item[1], reverse=True)
         
         print("\nFinal Scores:")

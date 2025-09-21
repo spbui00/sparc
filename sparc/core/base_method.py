@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import numpy as np
 from typing import Dict, Any, Optional
+import inspect
 
 from .signal_data import ArtifactMarkers
 
@@ -69,11 +70,17 @@ class BaseSACMethod(ABC):
         """
         return self.fit(data, artifact_indices).transform(data)
     
-    def get_params(self) -> Dict[str, Any]:
-        """Get method parameters."""
-        return self.params.copy()
-    
-    def set_params(self, **params) -> 'BaseSACMethod':
-        """Set method parameters."""
-        self.params.update(params)
-        return self
+    def get_config(self) -> Dict[str, Any]:
+        """
+        Get method parameters.
+        Introspects the constructor and returns all arguments as a dictionary.
+        """
+        init_signature = inspect.signature(self.__class__.__init__)
+        params = {}
+        for param in init_signature.parameters.values():
+            if param.name != 'self' and param.kind != param.VAR_KEYWORD and param.kind != param.VAR_POSITIONAL:
+                if hasattr(self, param.name):
+                    params[param.name] = getattr(self, param.name)
+        if hasattr(self, 'params'):
+            params.update(self.params)
+        return params

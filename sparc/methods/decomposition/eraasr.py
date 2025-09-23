@@ -5,7 +5,7 @@ from sklearn.linear_model import LinearRegression
 from typing import Optional
 from tqdm import tqdm
 from sparc import BaseSACMethod
-from sparc.core.signal_data import ArtifactMarkers, ArtifactTriggers, ArtifactWindows
+from sparc.core.signal_data import ArtifactMarkers
 
 
 class ERAASR(BaseSACMethod):

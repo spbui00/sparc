@@ -1,13 +1,12 @@
 from .template_subtraction import (
-    BaseTemplateSubtraction,
     BackwardTemplateSubtraction,
 )
 from .interpolation import LinearInterpolation
-from .decomposition import ERAASR
+from .decomposition import ERAASR, ICA
 
 __all__ = [
-    "BaseTemplateSubtraction",
     "BackwardTemplateSubtraction",
     "LinearInterpolation",
     "ERAASR",
+    "ICA",
 ]

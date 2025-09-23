@@ -48,7 +48,6 @@ def main():
     tester.plot_results()
 
 def _decomposition():
-    # for the stimulated data: samples_pre_train=0, n_pulses=8, samples_per_pulse=150
     fixed_params = {
         'samples_pre_train': 0,
         'samples_per_pulse': 150, # number of samples per pulse
@@ -56,10 +55,12 @@ def _decomposition():
     }
 
     grid_params = {
-        'n_pc_channels': [2, 4, 12],            # Number of PCs for channel cleaning
-        'n_pc_pulses': [1, 2, 6],               # Number of PCs for pulse cleaning
+        'n_pc_channels': [4, 10],            # Number of PCs for channel cleaning
+        'n_pc_pulses': [2],               # Number of PCs for pulse cleaning
         'n_pc_trials': [2, 4],               # Number of PCs for trial cleaning
-        'omit_bandwidth_channels': [1, 3],   # How many adjacent channels to ignore
+        'omit_bandwidth_channels': [4],   # How many adjacent channels to ignore
+        'omit_bandwidth_pulses': [1],   # How many adjacent pulses to ignore
+        'omit_bandwidth_trials': [0],   # How many adjacent trials to ignore
         'pca_only_omitted': [True]    # Two different PCA model construction strategies
     }
 
@@ -69,28 +70,26 @@ def _decomposition():
         for n_pu in grid_params['n_pc_pulses']:
             for n_tr in grid_params['n_pc_trials']:
                 for omit_bw in grid_params['omit_bandwidth_channels']:
-                    for pca_omitted in grid_params['pca_only_omitted']:
-                        pca_mode_str = "omitted" if pca_omitted else "full"
-                        method_name = (
-                            f"eraasr_ch{n_ch}_pu{n_pu}_tr{n_tr}_"
-                            f"omit{omit_bw}_pca_{pca_mode_str}"
-                        )
-                        
-                        methods[method_name] = ERAASR(
-                            **fixed_params,
-                            
-                            # Pass the current parameters from the grid search
-                            n_pc_channels=n_ch,
-                            n_pc_pulses=n_pu,
-                            n_pc_trials=n_tr,
-                            omit_bandwidth_channels=omit_bw,
-                            pca_only_omitted=pca_omitted,
-                            
-                            # Keep other advanced parameters at their robust defaults
-                            omit_bandwidth_pulses=1,
-                            omit_bandwidth_trials=1,
-                            clean_over_trials_individual_channels=True
-                        )
+                    for omit_bw_pu in grid_params['omit_bandwidth_pulses']:
+                        for omit_bw_tr in grid_params['omit_bandwidth_trials']:
+                            for pca_omitted in grid_params['pca_only_omitted']:
+                                pca_mode_str = "omitted" if pca_omitted else "full"
+                                method_name = (
+                                    f"eraasr_ch{n_ch}_pu{n_pu}_tr{n_tr}_"
+                                    f"omit{omit_bw}_pu{omit_bw_pu}_tr{omit_bw_tr}_pca_{pca_mode_str}"
+                                )
+                                
+                                methods[method_name] = ERAASR(
+                                    **fixed_params,
+                                    n_pc_channels=n_ch,
+                                    n_pc_pulses=n_pu,
+                                    n_pc_trials=n_tr,
+                                    omit_bandwidth_channels=omit_bw,
+                                    omit_bandwidth_pulses=omit_bw_pu,
+                                    omit_bandwidth_trials=omit_bw_tr,
+                                    pca_only_omitted=pca_omitted,
+                                    clean_over_trials_individual_channels=True
+                                )
     return methods
 
 def _template_subtraction():

@@ -334,3 +334,31 @@ class NeuralPlotter:
         plt.tight_layout()
         plt.show()
 
+    def plot_all_channels_trial(self, data: np.ndarray, trial_idx: int):
+        trial_0_all_channels = data[trial_idx, :, :]
+    
+        sampling_rate = self.sampling_rate
+        time_vector = np.arange(trial_0_all_channels.shape[1]) / sampling_rate
+        
+        plt.figure(figsize=(15, 8))
+        
+        time_limit = 2.0
+        samples_limit = int(time_limit * sampling_rate)
+        
+        for ch in range(trial_0_all_channels.shape[0]):
+            offset = ch * 20
+            plt.plot(time_vector[:samples_limit], 
+                    trial_0_all_channels[ch, :samples_limit] + offset, 
+                    alpha=0.7, linewidth=0.5)
+        
+        plt.title('All Channels - Trial 0 (First 2 seconds)', fontsize=16)
+        plt.xlabel('Time (s)')
+        plt.ylabel('Channel (with vertical offset)')
+        plt.grid(True, alpha=0.3)
+        
+        channel_labels = [f'Ch {i}' for i in range(0, trial_0_all_channels.shape[0], 10)]
+        channel_positions = [i * 20 for i in range(0, trial_0_all_channels.shape[0], 10)]
+        plt.yticks(channel_positions, channel_labels)
+        
+        plt.tight_layout()
+        plt.show()

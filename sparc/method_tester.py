@@ -180,6 +180,59 @@ class MethodTester:
                 print(f"  - {method_name}: {score:.4f}")
             print(f"\nOverall Best Method: {best_method_overall}")
     
+    def load_specific_result(self, file_path: str) -> bool:
+        if not file_path.endswith('_cleaned.npy'):
+            if file_path.endswith('.npy'):
+                cleaned_file = file_path
+            else:
+                possible_paths = [
+                    f"{file_path}_cleaned.npy",
+                    os.path.join(self.save_folder, f"{file_path}_cleaned.npy") if hasattr(self, 'save_folder') else None
+                ]
+                cleaned_file = None
+                for path in possible_paths:
+                    if path and os.path.exists(path):
+                        cleaned_file = path
+                        break
+                if not cleaned_file:
+                    print(f"❌ Could not find file for method: {file_path}")
+                    return False
+        else:
+            cleaned_file = file_path
+            
+        if not os.path.exists(cleaned_file):
+            print(f"❌ File not found: {cleaned_file}")
+            return False
+            
+        method_name = os.path.basename(cleaned_file).replace("_cleaned.npy", "")
+        
+        try:
+            print(f"📂 Loading {method_name}...")
+            cleaned_signal = np.load(cleaned_file)
+            self.cleaned_signals[method_name] = cleaned_signal
+            
+            # Load config if it exists
+            config_file = cleaned_file.replace("_cleaned.npy", "_config.json")
+            config = None
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    config = json.load(f)
+                    print(f"📋 Config loaded for {method_name}")
+            
+            # Evaluate this method and store in results
+            self.results[method_name] = self.evaluate(
+                ground_truth=self.data.ground_truth,
+                original_mixed=self.data.raw_data,
+                cleaned=cleaned_signal
+            )
+            
+            print(f"✅ Successfully loaded {method_name}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Failed to load {method_name}: {str(e)}")
+            return False
+    
     @classmethod
     def load_saved_results(cls, data: SignalDataWithGroundTruth, results_folder: str):
         cleaned_files = glob.glob(os.path.join(results_folder, "*_cleaned.npy"))
@@ -187,6 +240,7 @@ class MethodTester:
             raise ValueError(f"No cleaned signal files found in {results_folder}")
         
         tester = cls(data, {}, save=False)
+        tester.save_folder = results_folder 
         
         print(f"Loading {len(cleaned_files)} saved results from {results_folder}")
         
@@ -200,31 +254,14 @@ class MethodTester:
             method_name = os.path.basename(cleaned_file).replace("_cleaned.npy", "")
             pbar.set_postfix_str(f"Processing {method_name}")
             
-            try:
-                cleaned_signal = np.load(cleaned_file)
-                tester.cleaned_signals[method_name] = cleaned_signal
-                
-                # Load config if it exists (just for info)
-                config_file = cleaned_file.replace("_cleaned.npy", "_config.json")
-                if os.path.exists(config_file):
-                    with open(config_file, 'r') as f:
-                        config = json.load(f)
-                
-                # Evaluate this method and store in results
-                tester.results[method_name] = tester.evaluate(
-                    ground_truth=data.ground_truth,
-                    original_mixed=data.raw_data,
-                    cleaned=cleaned_signal
-                )
-                
+            success = tester.load_specific_result(cleaned_file)
+            
+            if success:
                 loaded_count += 1
                 pbar.set_postfix_str(f"✓ {method_name}")
-                
-            except Exception as e:
+            else:
                 pbar.set_postfix_str(f"✗ {method_name} - CORRUPTED")
-                corrupted_files.append((method_name, str(e)))
-                # Continue with next file
-                continue
+                corrupted_files.append((method_name, "Failed to load"))
         
         pbar.close()
         
@@ -239,7 +276,20 @@ class MethodTester:
         if corrupted_files:
             print(f"\n⚠️  Skipped {len(corrupted_files)} corrupted files:")
             for method_name, error in corrupted_files:
-                print(f"    - {method_name}: {error[:80]}...")
+                print(f"    - {method_name}: {error}")
+            
+        return tester
+    
+    @classmethod
+    def load_specific_method(cls, data: SignalDataWithGroundTruth, file_path: str, results_folder: str = None):
+        tester = cls(data, {}, save=False)
+        if results_folder:
+            tester.save_folder = results_folder
+            
+        success = tester.load_specific_result(file_path)
+        
+        if not success:
+            raise ValueError(f"Failed to load result from: {file_path}")
             
         return tester
     

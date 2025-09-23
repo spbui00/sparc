@@ -1,7 +1,10 @@
 import numpy as np
 import json
 import os
+import glob
+import time
 from typing import Dict, Any, Optional
+from tqdm import tqdm
 
 from .core.base_method import BaseSACMethod
 from .core.evaluator import Evaluator
@@ -29,27 +32,38 @@ class MethodTester:
                 method.set_sampling_rate(self.data.sampling_rate)
 
     def run(self):
-        """
-        Runs the test by fitting and transforming the data with each method,
-        then evaluates the results using SPARCEvaluator.
-        """
         print(f"Running tests with {list(self.methods.keys())} methods.")
         
-        total = len(self.methods)
-        for name, method in self.methods.items():
-            print(f"\n=== Testing method: {name} ({list(self.methods.keys()).index(name)+1}/{total}) ===")
+        start_time = time.time()
+        pbar = tqdm(self.methods.items(), desc="Testing methods", unit="method")
+        
+        for name, method in pbar:
+            pbar.set_postfix_str(f"Processing {name}")
+            
             method.fit(self.data.raw_data, artifact_markers=self.data.artifact_markers)
             self.cleaned_signals[name] = method.transform(self.data.raw_data)
+            
             if self.save:
                 os.makedirs(self.save_folder, exist_ok=True)
                 np.save(os.path.join(self.save_folder, f"{name}_cleaned.npy"), self.cleaned_signals[name])
                 with open(os.path.join(self.save_folder, f"{name}_config.json"), 'w') as f:
                     json.dump(method.get_config(), f, indent=4)
+            
             self.results[name] = self.evaluate(
                 ground_truth=self.data.ground_truth,
                 original_mixed=self.data.raw_data,
                 cleaned=self.cleaned_signals[name]
             )
+            
+            pbar.set_postfix_str(f"✓ {name}")
+        
+        pbar.close()
+        
+        total_time = time.time() - start_time
+        print(f"\nTesting completed in {total_time:.2f} seconds")
+        if len(self.methods) > 0:
+            avg_time_per_method = total_time / len(self.methods)
+            print(f"Average time per method: {avg_time_per_method:.2f} seconds")
 
     def evaluate(self, ground_truth: np.ndarray, original_mixed: np.ndarray, cleaned: np.ndarray) -> Dict[str, float]:
         metrics = {}
@@ -116,9 +130,8 @@ class MethodTester:
             return
 
         if weights is None:
-            # --- CHANGE 2: Default weights no longer include 'mse' ---
             weights = {
-                'snr_improvement_db': 2.0,  # Highly weighted
+                'snr_improvement_db': 2.0, 
                 'mua_correlation': 1.5,
                 'hit_rate': 1.5,
                 'lfp_psd_correlation': 1.0,
@@ -166,3 +179,67 @@ class MethodTester:
             for method_name, score in sorted_scores:
                 print(f"  - {method_name}: {score:.4f}")
             print(f"\nOverall Best Method: {best_method_overall}")
+    
+    @classmethod
+    def load_saved_results(cls, data: SignalDataWithGroundTruth, results_folder: str):
+        cleaned_files = glob.glob(os.path.join(results_folder, "*_cleaned.npy"))
+        if not cleaned_files:
+            raise ValueError(f"No cleaned signal files found in {results_folder}")
+        
+        tester = cls(data, {}, save=False)
+        
+        print(f"Loading {len(cleaned_files)} saved results from {results_folder}")
+        
+        corrupted_files = []
+        loaded_count = 0
+        start_time = time.time()
+        
+        pbar = tqdm(cleaned_files, desc="Loading results", unit="file")
+        
+        for cleaned_file in pbar:
+            method_name = os.path.basename(cleaned_file).replace("_cleaned.npy", "")
+            pbar.set_postfix_str(f"Processing {method_name}")
+            
+            try:
+                cleaned_signal = np.load(cleaned_file)
+                tester.cleaned_signals[method_name] = cleaned_signal
+                
+                # Load config if it exists (just for info)
+                config_file = cleaned_file.replace("_cleaned.npy", "_config.json")
+                if os.path.exists(config_file):
+                    with open(config_file, 'r') as f:
+                        config = json.load(f)
+                
+                # Evaluate this method and store in results
+                tester.results[method_name] = tester.evaluate(
+                    ground_truth=data.ground_truth,
+                    original_mixed=data.raw_data,
+                    cleaned=cleaned_signal
+                )
+                
+                loaded_count += 1
+                pbar.set_postfix_str(f"✓ {method_name}")
+                
+            except Exception as e:
+                pbar.set_postfix_str(f"✗ {method_name} - CORRUPTED")
+                corrupted_files.append((method_name, str(e)))
+                # Continue with next file
+                continue
+        
+        pbar.close()
+        
+        total_time = time.time() - start_time
+        print(f"\nLoading completed in {total_time:.2f} seconds")
+        print(f"Successfully loaded {loaded_count}/{len(cleaned_files)} method results")
+        
+        if loaded_count > 0:
+            avg_time_per_file = total_time / loaded_count
+            print(f"Average time per file: {avg_time_per_file:.2f} seconds")
+        
+        if corrupted_files:
+            print(f"\n⚠️  Skipped {len(corrupted_files)} corrupted files:")
+            for method_name, error in corrupted_files:
+                print(f"    - {method_name}: {error[:80]}...")
+            
+        return tester
+    

@@ -2,7 +2,8 @@ import numpy as np
 from scipy import signal
 from sklearn.decomposition import PCA
 from sklearn.linear_model import LinearRegression
-from typing import Optional, List
+from typing import Optional
+from tqdm import tqdm
 from sparc import BaseSACMethod
 from sparc.core.signal_data import ArtifactMarkers, ArtifactTriggers, ArtifactWindows
 
@@ -48,100 +49,142 @@ class ERAASR(BaseSACMethod):
         return self
 
     def transform(self, data: np.ndarray) -> np.ndarray:
-        if not self.is_fitted:
-            raise RuntimeError("The transform method cannot be called before fit.")
-        if self.sampling_rate is None:
-            raise ValueError("Sampling rate must be set.")
-        if data.ndim != 3:
-            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
+        try:
+            if not self.is_fitted:
+                raise RuntimeError("The transform method cannot be called before fit.")
+            if self.sampling_rate is None:
+                raise ValueError("Sampling rate must be set.")
+            if data.ndim != 3:
+                raise ValueError("Input data must be 3D (trials, channels, timesteps).")
 
-        data_to_process = data.transpose(0, 2, 1)
-        num_trials, num_samples, num_channels = data_to_process.shape
+            data_to_process = data.transpose(0, 2, 1)
+            num_trials, num_samples, num_channels = data_to_process.shape
 
-        self._highpass_filter(data_to_process) 
+            self._highpass_filter(data_to_process) 
 
-        pulse_len = self.samples_per_pulse
-        train_len = pulse_len * self.n_pulses
-        artifact_window = np.arange(self.samples_pre_train, self.samples_pre_train + train_len)
+            pulse_len = self.samples_per_pulse
+            train_len = pulse_len * self.n_pulses
+            artifact_window = np.arange(self.samples_pre_train, self.samples_pre_train + train_len)
 
-        if self.samples_pre_train + train_len > num_samples:
-            raise ValueError("Artifact window (samples_pre_train + train_len) exceeds data length.")
+            if self.samples_pre_train + train_len > num_samples:
+                print(f"Warning: Artifact window exceeds data length. Skipping ERAASR processing.")
+                return data  # Return original data
 
-        data_segment = data_to_process[:, artifact_window, :]
-        segment_tensor = data_segment.reshape((num_trials, pulse_len, self.n_pulses, num_channels))
+            data_segment = data_to_process[:, artifact_window, :]
+            segment_tensor = data_segment.reshape((num_trials, pulse_len, self.n_pulses, num_channels))
+        except Exception as e:
+            print(f"Warning: ERAASR preprocessing failed: {e}. Returning original data.")
+            return data
         
-        # A. Clean across Channels
-        if self.n_pc_channels > 0:
-            # Reshape to (trials*time*pulses, channels)
-            matrix_for_pca = segment_tensor.transpose(0, 1, 2, 3).reshape(-1, num_channels)
-            cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
-                matrix_for_pca, self.n_pc_channels, self.omit_bandwidth_channels, self.pca_only_omitted
-            )
-            segment_tensor = cleaned_matrix.reshape(num_trials, pulse_len, self.n_pulses, num_channels)
+        try:
+            # A. Clean across Channels
+            if self.n_pc_channels > 0:
+                # Reshape to (trials*time*pulses, channels)
+                matrix_for_pca = segment_tensor.transpose(0, 1, 2, 3).reshape(-1, num_channels)
+                cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
+                    matrix_for_pca, self.n_pc_channels, self.omit_bandwidth_channels, self.pca_only_omitted,
+                    desc="Cleaning across channels"
+                )
+                segment_tensor = cleaned_matrix.reshape(num_trials, pulse_len, self.n_pulses, num_channels)
 
-        # B. Clean across Pulses
-        if self.n_pc_pulses > 0:
-            # Reshape to (trials*time*channels, pulses)
-            matrix_for_pca = segment_tensor.transpose(0, 1, 3, 2).reshape(-1, self.n_pulses)
-            cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
-                matrix_for_pca, self.n_pc_pulses, self.omit_bandwidth_pulses, self.pca_only_omitted
-            )
-            segment_tensor = cleaned_matrix.reshape(num_trials, pulse_len, num_channels, self.n_pulses).transpose(0, 1, 3, 2)
-        
-        # C. Clean across Trials
-        if self.n_pc_trials > 0 and num_trials > 1:
-            # Reshape to (time*pulses*channels, trials)
-            matrix_for_pca = segment_tensor.transpose(1, 2, 3, 0).reshape(-1, num_trials)
-            cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
-                matrix_for_pca, self.n_pc_trials, self.omit_bandwidth_trials, self.pca_only_omitted
-            )
-            segment_tensor = cleaned_matrix.reshape(pulse_len, self.n_pulses, num_channels, num_trials).transpose(3, 0, 1, 2)
+            # B. Clean across Pulses
+            if self.n_pc_pulses > 0:
+                # Reshape to (trials*time*channels, pulses)
+                matrix_for_pca = segment_tensor.transpose(0, 1, 3, 2).reshape(-1, self.n_pulses)
+                cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
+                    matrix_for_pca, self.n_pc_pulses, self.omit_bandwidth_pulses, self.pca_only_omitted,
+                    desc="Cleaning across pulses"
+                )
+                segment_tensor = cleaned_matrix.reshape(num_trials, pulse_len, num_channels, self.n_pulses).transpose(0, 1, 3, 2)
             
-        cleaned_segment = segment_tensor.reshape((num_trials, train_len, num_channels))
-        
-        final_cleaned_transposed = data_to_process.copy()
-        final_cleaned_transposed[:, artifact_window, :] = cleaned_segment
+            # C. Clean across Trials
+            if self.n_pc_trials > 0 and num_trials > 1:
+                # Reshape to (time*pulses*channels, trials)
+                matrix_for_pca = segment_tensor.transpose(1, 2, 3, 0).reshape(-1, num_trials)
+                cleaned_matrix, _, _ = self._clean_matrix_via_pca_regression(
+                    matrix_for_pca, self.n_pc_trials, self.omit_bandwidth_trials, self.pca_only_omitted,
+                    desc="Cleaning across trials"
+                )
+                segment_tensor = cleaned_matrix.reshape(pulse_len, self.n_pulses, num_channels, num_trials).transpose(3, 0, 1, 2)
+                
+            cleaned_segment = segment_tensor.reshape((num_trials, train_len, num_channels))
+            
+            final_cleaned_transposed = data_to_process.copy()
+            final_cleaned_transposed[:, artifact_window, :] = cleaned_segment
 
-        return final_cleaned_transposed.transpose(0, 2, 1)
+            return final_cleaned_transposed.transpose(0, 2, 1)
+            
+        except Exception as e:
+            print(f"Warning: ERAASR cleaning failed: {e}. Returning original data.")
+            return data
 
     def _clean_matrix_via_pca_regression(self, matrix: np.ndarray, n_components: int, 
-                                          omit_bandwidth: int, pca_only_omitted: bool) -> tuple:
-        # matrix shape: (samples, features)
-        cleaned_matrix = matrix.copy()
-        num_features = matrix.shape[1]
-        all_feature_indices = np.arange(num_features)
-        
-        # Center the data column-wise
-        mean_vec = np.nanmean(matrix, axis=0)
-        matrix_centered = matrix - mean_vec
-
-        for i in range(num_features):
-            omit_indices = np.arange(max(0, i - omit_bandwidth), min(num_features, i + omit_bandwidth + 1))
+                                      omit_bandwidth: int, pca_only_omitted: bool, desc: str = "Processing") -> tuple:
+        try:
+            cleaned_matrix = matrix.copy()
+            num_features = matrix.shape[1]
             
-            if pca_only_omitted:
-                # Build PCA model only from channels outside the omit-bandwidth
-                model_indices = np.setdiff1d(all_feature_indices, omit_indices)
-                if len(model_indices) < n_components: continue
-                model_data = matrix_centered[:, model_indices]
-                pca = PCA(n_components=n_components)
-                artifact_pcs = pca.fit_transform(model_data)
-            else:
-                # Build PCA model from all channels, then nullify components from omitted channels
-                if num_features < n_components: continue
-                pca = PCA(n_components=n_components)
-                pca.fit_transform(matrix_centered)
-                coeffs = pca.components_.T
-                coeffs[omit_indices, :] = 0 # Nullify contributions
-                artifact_pcs = matrix_centered @ coeffs
+            # Check basic conditions
+            if num_features < 2:
+                print(f"Warning: Not enough features ({num_features}) for PCA. Skipping cleaning step.")
+                return cleaned_matrix, None, None
+                
+            if matrix.shape[0] < n_components:
+                print(f"Warning: Not enough samples ({matrix.shape[0]}) for {n_components} components. Skipping cleaning step.")
+                return cleaned_matrix, None, None
+            
+            mean_vec = np.nanmean(matrix, axis=0)
+            matrix_centered = matrix - mean_vec
 
-            reg = LinearRegression()
-            reg.fit(artifact_pcs, matrix_centered[:, i])
-            artifact_for_feature_i = reg.predict(artifact_pcs)
-            cleaned_matrix[:, i] = matrix_centered[:, i] - artifact_for_feature_i
-        
-        # Add the mean back to the cleaned matrix
-        cleaned_matrix += mean_vec
-        return cleaned_matrix, None, None # Return tuple for compatibility
+            # Pre-compute PCA for non-omitted mode (efficiency)
+            if not pca_only_omitted and num_features >= n_components:
+                try:
+                    pca_all = PCA(n_components=n_components)
+                    pca_all.fit(matrix_centered)
+                    base_components = pca_all.components_.T  # Shape: (num_features, n_components)
+                except Exception as e:
+                    print(f"Warning: PCA fitting failed: {e}. Skipping cleaning step.")
+                    return cleaned_matrix, None, None
+
+            for i in tqdm(range(num_features), desc=desc, leave=False):
+                try:
+                    min_omit = max(0, i - (omit_bandwidth - 1) // 2)
+                    max_omit = min(num_features - 1, i + omit_bandwidth // 2)
+                    omit_indices = np.arange(min_omit, max_omit + 1)
+                    
+                    if pca_only_omitted:
+                        model_indices = np.setdiff1d(np.arange(num_features), omit_indices)
+                        if len(model_indices) < n_components: 
+                            continue
+                        model_data = matrix_centered[:, model_indices]
+                        pca = PCA(n_components=n_components)
+                        artifact_pcs = pca.fit_transform(model_data)
+                    else:
+                        if num_features < n_components: 
+                            continue
+                        components_copy = base_components.copy()
+                        components_copy[omit_indices, :] = 0
+                        artifact_pcs = matrix_centered @ components_copy
+
+                    # Check if we have valid PCs
+                    if artifact_pcs.shape[1] == 0:
+                        continue
+                        
+                    reg = LinearRegression()
+                    reg.fit(artifact_pcs, matrix_centered[:, i])
+                    artifact_for_feature_i = reg.predict(artifact_pcs)
+                    cleaned_matrix[:, i] = matrix_centered[:, i] - artifact_for_feature_i
+                    
+                except Exception as e:
+                    print(f"Warning: Failed to clean feature {i}: {e}. Skipping this feature.")
+                    continue
+            
+            cleaned_matrix += mean_vec
+            return cleaned_matrix, None, None
+            
+        except Exception as e:
+            print(f"Warning: PCA regression failed: {e}. Returning original matrix.")
+            return matrix, None, None
 
     def _highpass_filter(self, data: np.ndarray) -> np.ndarray:
         if self.hp_corner_hz <= 0 or self.sampling_rate is None:

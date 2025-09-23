@@ -11,8 +11,8 @@ def main():
     # for the stimulated data: samples_pre_train=0, n_pulses=8, samples_per_pulse=150
     fixed_params = {
         'samples_pre_train': 0,
-        'samples_per_pulse': 150,
-        'n_pulses': 8
+        'samples_per_pulse': 150, # number of samples per pulse
+        'n_pulses': 800 # number of pulses in the stimulus
     }
 
     grid_params = {
@@ -22,6 +22,13 @@ def main():
         'omit_bandwidth_channels': [1, 3],   # How many adjacent channels to ignore
         'pca_only_omitted': [True, False]    # Two different PCA model construction strategies
     }
+
+    # only test one of the combinations
+    grid_params['n_pc_channels'] = [4]
+    grid_params['n_pc_pulses'] = [2]
+    grid_params['n_pc_trials'] = [2]
+    grid_params['omit_bandwidth_channels'] = [1]
+    grid_params['pca_only_omitted'] = [True]
 
     methods = {}
     

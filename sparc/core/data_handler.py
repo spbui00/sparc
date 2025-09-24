@@ -163,12 +163,13 @@ class DataHandler:
             mixed_data = data['data_trials_by_time_by_channels']
             print(f"Loaded data shape from ERAASR .mat file: {mixed_data.shape}")
             sampling_rate = sampling_rate if sampling_rate is not None else 30000 
-            artifact_markers = self._detect_artifacts_eraasr(mixed_data, sampling_rate)
+            mixed_data = mixed_data.transpose(0, 2, 1) # (trials, time, channels)
+            # artifact_markers = self._detect_artifacts_eraasr(mixed_data, sampling_rate)
             
             return SignalData(
                 raw_data=mixed_data,
                 sampling_rate=sampling_rate,
-                artifact_markers=artifact_markers
+                # artifact_markers=artifact_markers
             )
         except FileNotFoundError:
             print(f"Error: The file '{filepath}' was not found.")

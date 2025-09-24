@@ -1,4 +1,5 @@
 from sparc import MethodTester, DataHandler
+from sparc.core.signal_data import SignalData
 from sparc.methods import ERAASR
 import time
 
@@ -6,6 +7,7 @@ import time
 def main():
     data_handler = DataHandler()
     data = data_handler.load_concatenated_simulated_data('../data/SimulatedData_2x64_30000_10trials.npz', 30000)
+
     print(data.raw_data.shape)
 
     # for the stimulated data: samples_pre_train=0, n_pulses=8, samples_per_pulse=150

@@ -2,8 +2,8 @@ from sparc.core.data_handler import DataHandler
 import numpy as np
 import time
 
-MAT_FILE_PATH = '../research/generate_dataset/SimulatedData_2x64_30000.mat'
-NPZ_FILE_PATH = '../data/simulated_data_2x64_30000.npz'
+MAT_FILE_PATH = '../../research/generate_dataset/SimulatedData_1_1024.mat'
+NPZ_FILE_PATH = '../../research/generate_dataset/SimulatedData_1_1024.npz'
 
 if __name__ == "__main__":
     start_time = time.time()

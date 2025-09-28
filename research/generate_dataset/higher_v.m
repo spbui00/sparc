@@ -35,8 +35,8 @@ FrameRate = 25; % camera frames per second. Assuming the stimulator is connected
 SimulationLength = 4; % The total simulated data length in seconds.
 FrameTime = 1/FrameRate;
 NumFrames = SimulationLength/FrameTime;
-PhospheneThreshold = 40; % This is the arbitrary phosphene threshold of the stimulating electrode, it is used in calculate stimulation induced response
-MaxCurrentLevelMultiplier = 2.5; % This is the maximal stimulation current level on a channel. It is PhospheneThreshold * MaxCurrentLevelMultiplier
+PhospheneThreshold = 100; % This is the arbitrary phosphene threshold of the stimulating electrode, it is used in calculate stimulation induced response
+MaxCurrentLevelMultiplier = 3; % This is the maximal stimulation current level on a channel. It is PhospheneThreshold * MaxCurrentLevelMultiplier
 GreyLevels = 8; % assume we can control the gray level, but here is more relevant in testing artifact removing
 StimParam.Frequency = 200; % pulse frequency Hz
 StimParam.Period = 1/StimParam.Frequency; % in seconds
@@ -45,7 +45,7 @@ StimParam.timeinterphase = 0.06; % ms,  same as cerestim definition, this is the
 StimParam.CurrentLevelFerFrame = randi(GreyLevels,NumFrames,1) / GreyLevels * PhospheneThreshold * MaxCurrentLevelMultiplier; % this is the stimulation current level per frame
 SpikeWaveformSNR = 3;
 ArtifactNoiseLevel = 0.01; % 10% artifact noise level
-ArtifactLevel100uA = 3000; % uV
+ArtifactLevel100uA = 50000; % uV
 RawDataSampleRate = 30000;
 SampleTime = 1/RawDataSampleRate;
 
@@ -61,7 +61,8 @@ StimulationExcitationSigmaMean = [1 0.5]; % ms
 StimulationExcitationCoefficient = 1;
 StimulationInhibitionSigmaMean = [5 10]; % ms
 StimulationInhibitionCoefficient = 0.1;
-StimulationSpatialActivationSigmaMean = [0.5 0; 1.5,0]; % in mm
+% StimulationSpatialActivationSigmaMean = [0.5 0; 1.5,0]; % in mm
+StimulationSpatialActivationSigmaMean = [2 0; 1.5,0];
 StimulationSpatialCoefficient = [1, 0];
 
 LFPspatialSigmaMean = [0.15 0]; % mm
@@ -232,9 +233,10 @@ for StimArray = StimulatedArray % for each stimulating array
                         % hand crafted artifact, good for testing
                         withinframesizevar = 0.2;
                         amplitudeshiftingintime = 0.12;
-                        beta0 = [0.62, 1.22];
+                        beta0 = [300.0, 0.5];
                         % artifact spatial profile
-                        x1 = ArrayParam(thisArray).Xmmcoord(thisElectrode);
+                        x1 = Array
+                        Param(thisArray).Xmmcoord(thisElectrode);
                         y1 = ArrayParam(thisArray).Ymmcoord(thisElectrode);
                         x2 = ArrayParam(StimArray).Xmmcoord(StimElec);
                         y2 = ArrayParam(StimArray).Ymmcoord(StimElec);
@@ -246,8 +248,10 @@ for StimArray = StimulatedArray % for each stimulating array
                         LastTimeStampIdx = 0;
                         for thisFrame = 1:NumFrames
                             currentLevel = StimParam.CurrentLevelFerFrame(thisFrame);
-                            yy = @(b,x) b(1) .*currentLevel.* (b(2).*x).^(-2);
-                            yy2 = @(b,x) b(1) .*10.* (b(2).*x).^(-2);
+                            % yy = @(b,x) b(1) .*currentLevel.* (b(2).*x).^(-2);
+                            % yy2 = @(b,x) b(1) .*10.* (b(2).*x).^(-2);
+                            yy = @(b,x) b(1) .*currentLevel.* (b(2).*x).^(-0.5);
+                            yy2 = @(b,x) 1 .*10.* (b(2).*x).^(-1);
                             r1 = random('Normal',beta0(1),beta0(1)/100);
                             r2 = random('Normal',beta0(2),beta0(2)/100);
                             beta(1) = r1;
@@ -501,3 +505,40 @@ end
 SimCombined = SimBB + SimArtifact;
 save('./SimulatedData.mat','AllStimIdx','SimFR','SimSpikeTrain','SimLFP','SimBB','SimArtifact','SimCombined','StimParam','AllSNR')
 
+% SCRIPT TO PLOT **ONLY THE ARTIFACT**
+clear;
+clc;
+data_file_path = '/Users/bui/code/sparc/research/generate_dataset/SimulatedData.mat';
+RawDataSampleRate = 30000;
+
+% --- Compare two different electrodes ---
+electrode_1 = 1; % The stimulating electrode
+electrode_2 = 2; % A nearby electrode
+array_to_plot = 1;
+
+load(data_file_path);
+num_samples = size(SimArtifact, 1);
+time_vector = (0:num_samples-1) / RawDataSampleRate;
+
+figure;
+
+% --- Top Plot: Artifact at the Source ---
+subplot(2, 1, 1);
+plot(time_vector, SimArtifact(:, electrode_1, array_to_plot));
+title_string = sprintf('ARTIFACT ONLY on Stimulating Electrode (%d, %d)', array_to_plot, electrode_1);
+title(title_string);
+ylabel('Amplitude (\muV)');
+grid on;
+xlim([0 0.2]);
+
+% --- Bottom Plot: Artifact on a Different Electrode ---
+subplot(2, 1, 2);
+plot(time_vector, SimArtifact(:, electrode_2, array_to_plot));
+title_string = sprintf('ARTIFACT ONLY on Nearby Electrode (%d, %d)', array_to_plot, electrode_2);
+title(title_string);
+xlabel('Time (s)');
+ylabel('Amplitude (\muV)');
+grid on;
+xlim([0 0.2]);
+
+disp('Plot generated successfully.');

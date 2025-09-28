@@ -1,31 +1,96 @@
 import numpy as np
-from typing import Optional
+from typing import Literal, Optional, Any
 from sparc import BaseSACMethod
 from sklearn.decomposition import FastICA
 import matplotlib.pyplot as plt
+from numpy import intp
 
 
 class ICA(BaseSACMethod):
-    def __init__(self, n_components: int = 2, features_axis: Optional[int] = -1, **kwargs):
+    def __init__(self, 
+        n_components: int = 2, 
+        features_axis: Optional[int] = -1, 
+        artifact_identify_method: Literal['variance', 'kurtosis_max', 'kurtosis_min']='variance', 
+        mode: Literal['global', 'targeted']='targeted',
+        pre_ms: float = 5.0,
+        post_ms: float = 25,
+        **kwargs):
         super().__init__(**kwargs)
         self._features_axis = features_axis
         self.n_components = n_components
         self.ica_ = None
         self.S_ = None
         self.artifact_idx_ = None
-        self._original_shape_info = None
+        self.artifact_identify_method = artifact_identify_method
+        self.mode = mode
+        self.pre_ms = pre_ms
+        self.post_ms = post_ms
+        if self.sampling_rate is not None:
+            self._update_ms_to_samples()
+    
+    def _update_ms_to_samples(self):
+        self.pre_samples = int(np.round(self.pre_ms * self.sampling_rate / 1000))
+        self.post_samples = int(np.round(self.post_ms * self.sampling_rate / 1000))
 
-    def _identify_artifact_component_idx(self, sources: np.ndarray) -> int:
+    def set_sampling_rate(self, sampling_rate: float):
+        self.sampling_rate = sampling_rate
+        self._update_ms_to_samples()
+
+    def _max_variance(self, sources: np.ndarray) -> intp:
         variances = np.var(sources, axis=0)
-        artifact_index = np.argmax(variances)
-        return artifact_index
+        return np.argmax(variances)
 
-    def fit(self, 
-            data: np.ndarray, 
-            **kwargs) -> 'ICA':
-        data_moved = np.moveaxis(data, self._features_axis, -1)
-        self._original_shape_info = data_moved.shape
-        num_features = self._original_shape_info[-1]
+    def _find_kurtosis_idx(self, x: np.ndarray, method: Literal['max', 'min']) -> intp:
+        def _kurtosis(x: np.ndarray) -> float | Any:
+            if len(x) == 0: return 0.0
+            mu4 = np.mean(x ** 4)
+            var = np.var(x)
+            if var == 0: return 0.0
+            return (mu4 / (var ** 2)) - 3
+            
+        kurtoses = np.array([_kurtosis(x[:, i]) for i in range(x.shape[1])])
+
+        if method == 'max':
+            return np.argmax(np.abs(kurtoses))
+        else: 
+            return np.argmin(np.abs(kurtoses))
+
+    def _identify_artifact_component_idx(self, sources: np.ndarray) -> intp:
+        if self.artifact_identify_method == 'variance':
+            return self._max_variance(sources)
+        elif self.artifact_identify_method == 'kurtosis_max':
+            return self._find_kurtosis_idx(sources, 'max')
+        elif self.artifact_identify_method == 'kurtosis_min':
+            return self._find_kurtosis_idx(sources, 'min')
+        else:
+            raise ValueError(f"Unknown artifact_identify_method: {self.artifact_identify_method}")
+
+    def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'ICA':
+        fit_data = data
+        if self.mode == 'targeted':
+            if artifact_markers is None:
+                raise ValueError("`artifact_markers` must be provided for 'targeted' mode fit.")
+            
+            data_trial = np.squeeze(data)
+            artifact_epochs = []
+            self.epoch_locations_ = []
+            
+            for start_idx in artifact_markers.starts[0][0]:
+                start = start_idx - self.pre_samples
+                end = start_idx + self.post_samples
+                if start >= 0 and end < data_trial.shape[self._features_axis]:
+                    epoch = data_trial[..., start:end] if self._features_axis in [-1, 2] else data_trial[:, start:end]
+                    artifact_epochs.append(epoch)
+                    self.epoch_locations_.append((start, end))
+
+            if not artifact_epochs:
+                raise ValueError("No artifact epochs were extracted for fitting.")
+            
+            concatenated_epochs = np.hstack(artifact_epochs)
+            fit_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
+
+        data_moved = np.moveaxis(fit_data, self._features_axis, -1)
+        num_features = data_moved.shape[-1]
         reshaped_data = data_moved.reshape(-1, num_features)
 
         n_components = self.n_components if self.n_components is not None else num_features
@@ -42,19 +107,55 @@ class ICA(BaseSACMethod):
     def transform(self, data: np.ndarray) -> np.ndarray:
         if not self.is_fitted:
             raise ValueError("Method must be fitted before transforming data.")
-
-        data_moved = np.moveaxis(data, self._features_axis, -1)
-        num_features = data_moved.shape[-1]
-        reshaped_data = data_moved.reshape(-1, num_features)
         
-        sources = self.ica_.transform(reshaped_data)
-        sources[:, self.artifact_idx_] = 0
-        cleaned_reshaped_data = self.ica_.inverse_transform(sources)
+        if self.mode == 'global':
+            data_moved = np.moveaxis(data, self._features_axis, -1)
+            output_shape = data_moved.shape
+            reshaped_data = data_moved.reshape(-1, output_shape[-1])
+            
+            sources = self.ica_.transform(reshaped_data)
+            sources[:, self.artifact_idx_] = 0
+            cleaned_reshaped_data = self.ica_.inverse_transform(sources)
 
-        cleaned_data_moved = cleaned_reshaped_data.reshape(self._original_shape_info)
-        cleaned_data = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
+            cleaned_data_moved = cleaned_reshaped_data.reshape(output_shape)
+            cleaned_data = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
+            return cleaned_data
+        else:
+            if self.epoch_locations_ is None:
+                raise ValueError("Fit must be called with artifact_markers in targeted mode before transform.")
 
-        return cleaned_data
+            data_trial = np.squeeze(data)
+            artifact_epochs = [data_trial[..., start:end] if self._features_axis in [-1, 2] else data_trial[:, start:end] for start, end in self.epoch_locations_]
+            
+            concatenated_epochs = np.hstack(artifact_epochs)
+            transform_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
+
+            data_moved = np.moveaxis(transform_data, self._features_axis, -1)
+            output_shape = data_moved.shape
+            reshaped_data = data_moved.reshape(-1, output_shape[-1])
+
+            sources = self.ica_.transform(reshaped_data)
+            sources[:, self.artifact_idx_] = 0
+            cleaned_reshaped_data = self.ica_.inverse_transform(sources)
+            
+            cleaned_concatenated_epochs = cleaned_reshaped_data.reshape(output_shape)
+            cleaned_concatenated_epochs = np.moveaxis(cleaned_concatenated_epochs, -1, self._features_axis)
+            cleaned_concatenated_epochs = np.squeeze(cleaned_concatenated_epochs)
+
+            final_cleaned_data = data.copy()
+            final_cleaned_data_trial = np.squeeze(final_cleaned_data)
+            
+            current_pos_in_concat = 0
+            for start, end in self.epoch_locations_:
+                epoch_len = end - start
+                cleaned_segment = cleaned_concatenated_epochs[..., current_pos_in_concat : current_pos_in_concat + epoch_len]
+                if self._features_axis in [-1, 2]:
+                    final_cleaned_data_trial[..., start:end] = cleaned_segment
+                else:
+                    final_cleaned_data_trial[:, start:end] = cleaned_segment
+                current_pos_in_concat += epoch_len
+            
+            return final_cleaned_data
 
     def plot_components(self, n_samples_to_plot: int = 1000):
         if not self.is_fitted:

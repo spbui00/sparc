@@ -3,11 +3,13 @@ from typing import Optional
 from sparc import BaseSACMethod
 from sklearn.decomposition import FastICA
 import matplotlib.pyplot as plt
+from numpy import intp
+from typing import Literal, Any
 
 
 class LocalICA(BaseSACMethod):
     def __init__(self, n_components: int = 2, features_axis: Optional[int] = -1,
-                 stim_channel: int = 0, local_radius: int = 5, **kwargs):
+                 stim_channel: int = 0, local_radius: int = 5, artifact_identify_method: Literal['kurtosis', 'variance', 'spatial_peak'] = 'kurtosis', **kwargs):
         super().__init__(**kwargs)
         self._features_axis = features_axis
         self.n_components = n_components
@@ -19,21 +21,45 @@ class LocalICA(BaseSACMethod):
         self.spatial_map_ = None
         self.local_channels_ = None
         self._data_moved_shape_template = None  # To infer shape structure
+        self.artifact_identify_method = artifact_identify_method
 
-    def _kurtosis(self, x: np.ndarray) -> float:
-        if len(x) == 0:
-            return 0.0
-        mu4 = np.mean(x ** 4)
-        var = np.var(x)
-        if var == 0:
-            return 0.0
-        return (mu4 / (var ** 2)) - 3
+    def _max_variance(self, sources: np.ndarray) -> intp:
+        variances = np.var(sources, axis=0)
+        return np.argmax(variances)
 
-    def _identify_artifact_component_idx(self, sources: np.ndarray) -> int:
-        kurtoses = np.array([self._kurtosis(sources[:, i]) for i in range(sources.shape[1])])
-        artifact_index = np.argmax(np.abs(kurtoses))
-        return artifact_index
+    def _max_kurtosis(self, x: np.ndarray) -> intp:
+        def _kurtosis(x: np.ndarray) -> float | Any:
+            if len(x) == 0:
+                return 0.0
+            mu4 = np.mean(x ** 4)
+            var = np.var(x)
+            if var == 0:
+                return 0.0
+            return (mu4 / (var ** 2)) - 3
+        kurtoses = np.array([_kurtosis(x[:, i]) for i in range(x.shape[1])])
+        return np.argmax(np.abs(kurtoses))
 
+    def _max_spatial_peak(self, mixing_matrix: np.ndarray) -> intp:
+        local_stim_channel_idx = np.where(self.local_channels_ == self.stim_channel)[0]
+        
+        if len(local_stim_channel_idx) == 0:
+            raise ValueError("stim_channel is not within the local channels range.")
+            
+        local_stim_channel_idx = local_stim_channel_idx[0]
+        weights_at_stim_channel = np.abs(mixing_matrix[local_stim_channel_idx, :])
+        
+        return np.argmax(weights_at_stim_channel)
+
+    def _identify_artifact_component_idx(self, sources: np.ndarray) -> intp:
+        if self.artifact_identify_method == 'variance':
+            return self._max_variance(sources)
+        elif self.artifact_identify_method == 'kurtosis':
+            return self._max_kurtosis(sources)
+        elif self.artifact_identify_method == 'spatial_peak':
+            return self._max_spatial_peak(self.ica_local_.mixing_)
+        else:
+            raise ValueError(f"Unknown artifact_identify_method: {self.artifact_identify_method}")
+    
     def fit(self, 
             data: np.ndarray, 
             **kwargs) -> 'LocalICA':

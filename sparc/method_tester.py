@@ -69,10 +69,10 @@ class MethodTester:
         metrics = {}
         
         metrics['snr_improvement_db'] = self.evaluator.calculate_snr_improvement(original_mixed, cleaned, ground_truth)
-        mua_metrics = self.evaluator.evaluate_mua(cleaned, ground_truth)
-        metrics.update(mua_metrics)
-        spike_metrics = self.evaluator.evaluate_spikes(cleaned, ground_truth)
-        metrics.update(spike_metrics)
+        # mua_metrics = self.evaluator.evaluate_mua(cleaned, ground_truth)
+        # metrics.update(mua_metrics)
+        # spike_metrics = self.evaluator.evaluate_spikes(cleaned, ground_truth)
+        # metrics.update(spike_metrics)
         lfp_metrics = self.evaluator.evaluate_lfp(cleaned, ground_truth)
         metrics.update(lfp_metrics)
 

@@ -1,115 +1,47 @@
 from sparc.methods.decomposition import ICA, LocalICA, SparseLocalProjection
 from sparc import DataHandler, NeuralAnalyzer, NeuralPlotter
-from sparc.core.signal_data import SignalData
+from sparc.core.signal_data import ArtifactTriggers
+from sparc import MethodTester
+from sparc.core.signal_data import SignalData, SignalDataWithGroundTruth, SimulatedData
 import matplotlib.pyplot as plt
+import numpy as np
+from scipy.signal import resample
 
 
 def ica():
     data_handler = DataHandler()
     # data_obj = data_handler.load_concatenated_simulated_data('../data/SimulatedData_2x64_30000_10trials.npz', 30000)
-    data_obj = data_handler.load_simulated_data('../data/simulated_data_2x64_30000.npz', 30000)
+    data_obj = data_handler.load_npz_data('../data/simulated_data_2x64_1000.npz')
+    data_obj = SimulatedData(
+        raw_data=data_obj['raw_data'],
+        sampling_rate=data_obj['sampling_rate'],
+        ground_truth=data_obj['ground_truth'],
+        artifacts=data_obj['artifacts'],
+        artifact_markers=ArtifactTriggers(starts=data_obj['artifact_markers']),  
+        firing_rate=data_obj['firing_rate'],
+        spike_train=data_obj['spike_train'],
+        lfp=data_obj['lfp'],
+        stim_params=None,
+        snr=data_obj['snr'],
+    )
     data = data_obj.raw_data
     print(data.shape)
     analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
     plotter = NeuralPlotter(analyzer)
     plotter.plot_all_channels_trial(data_obj.raw_data, 0)
 
-    ica = ICA(n_components=5, features_axis=1)
-    ica.fit(data)
-    ica.plot_components()
-    cleaned_data = ica.transform(data)
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        0
-    )
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        1
-    )
-
-def local_ica():
-    data_handler = DataHandler()
-    # data_obj = data_handler.load_simulated_data('../data/simulated_data_2x64_30000.npz', 30000)
-    data_obj = SignalData(
-        raw_data = data_handler.load_npz_data('../data/eraasr_30000.npz')['arr_0'],
-        sampling_rate = 30000
-    )
-    data = data_obj.raw_data
-    print(data.shape)
-    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
-    plotter = NeuralPlotter(analyzer)
-    # plotter.plot_all_channels_trial(data_obj.raw_data, 0)
-
-    ica = LocalICA(
+    ica = ICA(
         n_components=2,
-        features_axis=1,
-        stim_channel=0,
-        local_radius=24,
+        features_axis=1, 
+        artifact_identify_method='kurtosis_min',
+        mode='targeted',
+        pre_ms=2.0,
+        post_ms=4.0,
     )
-    ica.fit(data)
+    ica.set_sampling_rate(data_obj.sampling_rate)
+    ica.fit(data, artifact_markers=data_obj.artifact_markers)
     ica.plot_components()
     cleaned_data = ica.transform(data)
-    plotter.plot_trace_comparison(
-        cleaned_data,
-        data, 
-        0, 0
-    )
-    plotter.plot_trace_comparison(
-        cleaned_data,
-        data, 
-        0, 23
-    )
-    # plotter.plot_cleaned_comparison(
-    #     data_obj.ground_truth,
-    #     data_obj.raw_data,
-    #     cleaned_data,
-    #     0,
-    #     0
-    # )
-    # plotter.plot_cleaned_comparison(
-    #     data_obj.ground_truth,
-    #     data_obj.raw_data,
-    #     cleaned_data,
-    #     0,
-    #     1
-    # )
-    # difference between raw data and cleaned data
-    plt.plot(data_obj.raw_data[0, 0, :] - cleaned_data[0, 0, :])
-    plt.show()
-
-def sparse_local_projection():
-    data_handler = DataHandler()
-    data_obj = data_handler.load_concatenated_simulated_data('../data/SimulatedData_2x64_30000_10trials.npz', 30000)
-    data = data_obj.raw_data
-    print(data.shape)
-    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
-    plotter = NeuralPlotter(analyzer)
-    # plotter.plot_all_channels_trial(data_obj.raw_data, 0)
-
-    ica = SparseLocalProjection(
-        stim_channel=0,
-        local_radius=5,
-        epoch_pre=50,
-        epoch_post=150,
-        l1_alpha=0.01,
-        features_axis=-1,
-    )
-    ica.fit(data, stim_times=data_obj.artifact_markers.starts)
-    ica.plot_components()
-    cleaned_data = ica.transform(data)
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        0
-    )
     plotter.plot_cleaned_comparison(
         data_obj.ground_truth,
         data_obj.raw_data,
@@ -117,6 +49,56 @@ def sparse_local_projection():
         0,
         1
     )
+    plotter.plot_cleaned_comparison(
+        data_obj.ground_truth,
+        data_obj.raw_data,
+        cleaned_data,
+        0,
+        20
+    )
+
+def multiple_icas():
+    data_handler = DataHandler()
+    data_obj = data_handler.load_npz_data('../data/simulated_data_2x64_1000.npz')
+    data_obj = SimulatedData(
+        raw_data=data_obj['raw_data'],
+        sampling_rate=data_obj['sampling_rate'],
+        ground_truth=data_obj['ground_truth'],
+        artifacts=data_obj['artifacts'],
+        artifact_markers=ArtifactTriggers(starts=data_obj['artifact_markers']),  
+        firing_rate=data_obj['firing_rate'],
+        spike_train=data_obj['spike_train'],
+        lfp=data_obj['lfp'],
+        stim_params=None,
+        snr=data_obj['snr'],
+    )
+    data = data_obj.raw_data
+    print(data.shape)
+    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
+    plotter = NeuralPlotter(analyzer)
+
+    artifact_identify_methods = ['kurtosis_min', 'variance']
+    modes = ['global', 'targeted']
+    pre_ms = [1.0, 2.0, 3.0, 4.0]
+    post_ms = [1.0, 2.0, 3.0, 4.0]
+    
+    methods = {}
+    for artifact_identify_method in artifact_identify_methods:
+        for mode in modes:
+            for pr in pre_ms:
+                for po in post_ms:
+                    method_name = f"ica_{artifact_identify_method}_{mode}_{pr}_{po}"
+                    methods[method_name] = ICA(n_components=2, features_axis=1,artifact_identify_method=artifact_identify_method, mode=mode, pre_ms=pr, post_ms=po)
+
+    tester = MethodTester(
+        data=data_obj,
+        methods=methods,
+    )
+    tester.run()
+    tester.print_results()
+    tester.plot_results()
+    tester.compare()
+
 
 if __name__ == "__main__":
-    local_ica()
+    multiple_icas()

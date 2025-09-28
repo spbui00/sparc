@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import signal, stats
+from scipy.fft import fft, fftfreq
 import pywt
 from typing import Dict, List, Tuple, Optional, Any
 import warnings
@@ -8,6 +9,20 @@ import warnings
 class NeuralAnalyzer:
     def __init__(self, sampling_rate: float):
         self.sampling_rate = sampling_rate
+        
+    def compute_fft(self, data: np.ndarray, trial_idx: int, channel_idx: int) -> Tuple[np.ndarray, np.ndarray]:
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
+
+        trace = data[trial_idx, channel_idx, :]
+        n_samples = trace.shape[0]
+        
+        # Compute FFT
+        yf = fft(trace)
+        xf = fftfreq(n_samples, 1 / self.sampling_rate)
+        
+        # positive frequencies and corresponding magnitude
+        return xf[:n_samples//2], np.abs(yf[:n_samples//2])
         
     def compute_psd(self, data: np.ndarray, nperseg: int = 256) -> Tuple[np.ndarray, np.ndarray]:
         if data.ndim != 3:

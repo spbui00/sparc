@@ -159,6 +159,23 @@ class NeuralPlotter:
         plt.tight_layout()
         plt.show()
 
+    def plot_fft(self, data: np.ndarray, trial_idx: int, channel_idx: int, title: Optional[str] = None):
+        freqs, yf_mag = self.analyzer.compute_fft(data, trial_idx, channel_idx)
+        
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        ax.plot(freqs, yf_mag, color=self.color_theme['signal'])
+        
+        ax.set_title(title or f"FFT - Trial {trial_idx}, Channel {channel_idx}")
+        ax.set_xlabel("Frequency (Hz)")
+        ax.set_ylabel("Magnitude")
+        ax.grid(True, which="both", ls="--", color=self.color_theme['grid'])
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
+        plt.tight_layout()
+        plt.show()
+
     def plot_spike_raster(self, spikes: List[List[List[Dict]]], channel_idx: int = 0, title: Optional[str] = None):
         fig, ax = plt.subplots(figsize=(10, 5))
         
@@ -220,22 +237,22 @@ class NeuralPlotter:
         plt.tight_layout()
         plt.show()
 
-    def plot_trace_comparison(self, ground_truth: np.ndarray, mixed_data: np.ndarray, trial_idx: int, channel_idx: int, title: Optional[str] = None):
-        if ground_truth.ndim != 3 or mixed_data.ndim != 3:
+    def plot_trace_comparison(self, cleaned: np.ndarray, mixed_data: np.ndarray, trial_idx: int, channel_idx: int, title: Optional[str] = None):
+        if cleaned.ndim != 3 or mixed_data.ndim != 3:
             raise ValueError("Input data must be 3D (trials, channels, timesteps).")
-        if ground_truth.shape != mixed_data.shape:
+        if cleaned.shape != mixed_data.shape:
             raise ValueError("Shapes of ground_truth and mixed_data must be the same.")
 
         fig, ax = plt.subplots(figsize=(12, 6))
         
         # Extract traces
-        gt_trace = ground_truth[trial_idx, channel_idx, :]
+        gt_trace = cleaned[trial_idx, channel_idx, :]
         mixed_trace = mixed_data[trial_idx, channel_idx, :]
         
         time_axis = np.arange(gt_trace.shape[0]) / self.sampling_rate 
         
         ax.plot(time_axis, mixed_trace, color=self.color_theme['signal'], linewidth=1, label='Mixed Data')
-        ax.plot(time_axis, gt_trace, color=self.color_theme['spike'], linewidth=1, label='Ground Truth')
+        ax.plot(time_axis, gt_trace, color=self.color_theme['spike'], linewidth=1, label='Comparison')
         
         ax.set_title(title or f"Comparison - Trial {trial_idx}, Channel {channel_idx}")
         ax.set_xlabel("Time (s)")
@@ -335,29 +352,25 @@ class NeuralPlotter:
         plt.show()
 
     def plot_all_channels_trial(self, data: np.ndarray, trial_idx: int):
-        trial_0_all_channels = data[trial_idx, :, :]
+        trial_data = data[trial_idx, :, :]
     
-        sampling_rate = self.sampling_rate
-        time_vector = np.arange(trial_0_all_channels.shape[1]) / sampling_rate
+        sample_vector = np.arange(trial_data.shape[1])
         
         plt.figure(figsize=(15, 8))
         
-        time_limit = 2.0
-        samples_limit = int(time_limit * sampling_rate)
-        
-        for ch in range(trial_0_all_channels.shape[0]):
+        for ch in range(trial_data.shape[0]):
             offset = ch * 20
-            plt.plot(time_vector[:samples_limit], 
-                    trial_0_all_channels[ch, :samples_limit] + offset, 
+            plt.plot(sample_vector, 
+                    trial_data[ch, :] + offset, 
                     alpha=0.7, linewidth=0.5)
         
-        plt.title('All Channels - Trial 0 (First 2 seconds)', fontsize=16)
-        plt.xlabel('Time (s)')
+        plt.title(f'All Channels - Trial {trial_idx}', fontsize=16)
+        plt.xlabel('Samples')
         plt.ylabel('Channel (with vertical offset)')
         plt.grid(True, alpha=0.3)
         
-        channel_labels = [f'Ch {i}' for i in range(0, trial_0_all_channels.shape[0], 10)]
-        channel_positions = [i * 20 for i in range(0, trial_0_all_channels.shape[0], 10)]
+        channel_labels = [f'Ch {i}' for i in range(0, trial_data.shape[0], 10)]
+        channel_positions = [i * 20 for i in range(0, trial_data.shape[0], 10)]
         plt.yticks(channel_positions, channel_labels)
         
         plt.tight_layout()

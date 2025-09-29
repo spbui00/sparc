@@ -46,7 +46,6 @@ if __name__ == "__main__":
 
     plotter.plot_trace_comparison(data_obj.ground_truth, data_obj.raw_data, 0, 0)   
 
-    exit()
     data_to_save = {}
 
     continuous_attrs = ['raw_data', 'ground_truth', 'artifacts', 'lfp', 'firing_rate']

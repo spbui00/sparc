@@ -66,28 +66,40 @@ class ICA(BaseSACMethod):
             raise ValueError(f"Unknown artifact_identify_method: {self.artifact_identify_method}")
 
     def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'ICA':
-        fit_data = data
         if self.mode == 'targeted':
             if artifact_markers is None:
                 raise ValueError("`artifact_markers` must be provided for 'targeted' mode fit.")
             
-            data_trial = np.squeeze(data)
-            artifact_epochs = []
-            self.epoch_locations_ = []
+            # Store artifact locations for each trial
+            self.artifact_locations_per_trial_ = []
             
-            for start_idx in artifact_markers.starts[0][0]:
-                start = start_idx - self.pre_samples
-                end = start_idx + self.post_samples
-                if start >= 0 and end < data_trial.shape[self._features_axis]:
-                    epoch = data_trial[..., start:end] if self._features_axis in [-1, 2] else data_trial[:, start:end]
-                    artifact_epochs.append(epoch)
-                    self.epoch_locations_.append((start, end))
+            # Collect all artifact epochs from all trials and channels
+            all_artifact_epochs = []
+            
+            for trial_idx in range(len(artifact_markers.starts)):
+                trial_locations = []
+                for channel_idx in range(len(artifact_markers.starts[trial_idx])):
+                    for start_idx in artifact_markers.starts[trial_idx][channel_idx]:
+                        start = start_idx - self.pre_samples
+                        end = start_idx + self.post_samples
+                        if start >= 0 and end < data.shape[-1]:
+                            # Extract epoch from specific trial and channel
+                            if self._features_axis in [-1, 2]:
+                                epoch = data[trial_idx, ..., start:end]
+                            else:
+                                epoch = data[trial_idx, :, start:end]
+                            all_artifact_epochs.append(epoch)
+                            trial_locations.append((channel_idx, start, end))
+                self.artifact_locations_per_trial_.append(trial_locations)
 
-            if not artifact_epochs:
+            if not all_artifact_epochs:
                 raise ValueError("No artifact epochs were extracted for fitting.")
             
-            concatenated_epochs = np.hstack(artifact_epochs)
+            # Concatenate all artifact epochs for ICA training
+            concatenated_epochs = np.hstack(all_artifact_epochs)
             fit_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
+        else:
+            fit_data = data
 
         data_moved = np.moveaxis(fit_data, self._features_axis, -1)
         num_features = data_moved.shape[-1]
@@ -121,39 +133,54 @@ class ICA(BaseSACMethod):
             cleaned_data = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
             return cleaned_data
         else:
-            if self.epoch_locations_ is None:
+            if not hasattr(self, 'artifact_locations_per_trial_'):
                 raise ValueError("Fit must be called with artifact_markers in targeted mode before transform.")
 
-            data_trial = np.squeeze(data)
-            artifact_epochs = [data_trial[..., start:end] if self._features_axis in [-1, 2] else data_trial[:, start:end] for start, end in self.epoch_locations_]
-            
-            concatenated_epochs = np.hstack(artifact_epochs)
-            transform_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
-
-            data_moved = np.moveaxis(transform_data, self._features_axis, -1)
-            output_shape = data_moved.shape
-            reshaped_data = data_moved.reshape(-1, output_shape[-1])
-
-            sources = self.ica_.transform(reshaped_data)
-            sources[:, self.artifact_idx_] = 0
-            cleaned_reshaped_data = self.ica_.inverse_transform(sources)
-            
-            cleaned_concatenated_epochs = cleaned_reshaped_data.reshape(output_shape)
-            cleaned_concatenated_epochs = np.moveaxis(cleaned_concatenated_epochs, -1, self._features_axis)
-            cleaned_concatenated_epochs = np.squeeze(cleaned_concatenated_epochs)
-
             final_cleaned_data = data.copy()
-            final_cleaned_data_trial = np.squeeze(final_cleaned_data)
             
-            current_pos_in_concat = 0
-            for start, end in self.epoch_locations_:
-                epoch_len = end - start
-                cleaned_segment = cleaned_concatenated_epochs[..., current_pos_in_concat : current_pos_in_concat + epoch_len]
-                if self._features_axis in [-1, 2]:
-                    final_cleaned_data_trial[..., start:end] = cleaned_segment
-                else:
-                    final_cleaned_data_trial[:, start:end] = cleaned_segment
-                current_pos_in_concat += epoch_len
+            for trial_idx, trial_locations in enumerate(self.artifact_locations_per_trial_):
+                if not trial_locations:
+                    continue  # Skip trials with no artifacts
+                
+                # Collect artifact epochs for this trial
+                trial_artifact_epochs = []
+                for channel_idx, start, end in trial_locations:
+                    if self._features_axis in [-1, 2]:
+                        epoch = data[trial_idx, ..., start:end]
+                    else:
+                        epoch = data[trial_idx, :, start:end]
+                    trial_artifact_epochs.append(epoch)
+                
+                if not trial_artifact_epochs:
+                    continue
+                
+                # Concatenate epochs for this trial
+                concatenated_epochs = np.hstack(trial_artifact_epochs)
+                transform_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
+
+                # Apply ICA
+                data_moved = np.moveaxis(transform_data, self._features_axis, -1)
+                output_shape = data_moved.shape
+                reshaped_data = data_moved.reshape(-1, output_shape[-1])
+
+                sources = self.ica_.transform(reshaped_data)
+                sources[:, self.artifact_idx_] = 0
+                cleaned_reshaped_data = self.ica_.inverse_transform(sources)
+                
+                cleaned_concatenated_epochs = cleaned_reshaped_data.reshape(output_shape)
+                cleaned_concatenated_epochs = np.moveaxis(cleaned_concatenated_epochs, -1, self._features_axis)
+                cleaned_concatenated_epochs = np.squeeze(cleaned_concatenated_epochs)
+
+                # Put cleaned segments back into the original data
+                current_pos_in_concat = 0
+                for channel_idx, start, end in trial_locations:
+                    epoch_len = end - start
+                    cleaned_segment = cleaned_concatenated_epochs[..., current_pos_in_concat : current_pos_in_concat + epoch_len]
+                    if self._features_axis in [-1, 2]:
+                        final_cleaned_data[trial_idx, ..., start:end] = cleaned_segment
+                    else:
+                        final_cleaned_data[trial_idx, :, start:end] = cleaned_segment
+                    current_pos_in_concat += epoch_len
             
             return final_cleaned_data
 

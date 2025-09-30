@@ -2,6 +2,7 @@
 import numpy as np
 from typing import Dict, Any
 from .neural_analyzer import NeuralAnalyzer
+from scipy import signal
 
 
 class Evaluator(NeuralAnalyzer):
@@ -121,3 +122,70 @@ class Evaluator(NeuralAnalyzer):
         snr_after = self.calculate_snr(ground_truth, noise_after)
         
         return snr_after - snr_before
+
+    def calculate_signal_quality_metrics(self, original: np.ndarray, cleaned: np.ndarray) -> Dict[str, float]:
+        metrics = {}
+        
+        rms_original = np.sqrt(np.mean(original ** 2))
+        rms_cleaned = np.sqrt(np.mean(cleaned ** 2))
+        metrics['rms_reduction_ratio'] = rms_original / rms_cleaned if rms_cleaned > 0 else np.nan
+        
+        var_original = np.var(original)
+        var_cleaned = np.var(cleaned)
+        metrics['variance_reduction_ratio'] = var_original / var_cleaned if var_cleaned > 0 else np.nan
+        
+        return metrics
+
+    def calculate_lfp_quality_metrics(self, lfp_original: np.ndarray, lfp_cleaned: np.ndarray) -> Dict[str, float]:
+        metrics = {}
+        
+        lfp_power_original = np.mean(lfp_original ** 2)
+        lfp_power_cleaned = np.mean(lfp_cleaned ** 2)
+        metrics['lfp_power_preservation_ratio'] = lfp_power_cleaned / lfp_power_original if lfp_power_original > 0 else np.nan
+        
+        freqs_orig, psd_orig = self.compute_psd(lfp_original)
+        freqs_clean, psd_clean = self.compute_psd(lfp_cleaned)
+        
+        if np.std(psd_orig) > 1e-9 and np.std(psd_clean) > 1e-9:
+            lfp_spectral_correlation = np.corrcoef(psd_orig.flatten(), psd_clean.flatten())[0, 1]
+            metrics['lfp_spectral_preservation'] = lfp_spectral_correlation
+        
+        return metrics
+
+    def estimate_snr_improvement(self, original: np.ndarray, cleaned: np.ndarray) -> float:
+        nyquist_freq = self.sampling_rate / 2
+        
+        # High-pass filter for artifacts (use 1/4 of Nyquist frequency)
+        high_pass_freq = min(nyquist_freq * 0.25, 200) 
+        # Low-pass filter for neural signal (use 1/8 of Nyquist frequency)  
+        low_pass_freq = min(nyquist_freq * 0.125, 100)
+        
+        if high_pass_freq >= nyquist_freq * 0.9:
+            high_pass_freq = nyquist_freq * 0.1
+        if low_pass_freq >= nyquist_freq * 0.9:
+            low_pass_freq = nyquist_freq * 0.05
+            
+        try:
+            sos_high = signal.butter(4, high_pass_freq, btype='high', fs=self.sampling_rate, output='sos')
+            high_freq_original = signal.sosfiltfilt(sos_high, original, axis=-1)
+            high_freq_cleaned = signal.sosfiltfilt(sos_high, cleaned, axis=-1)
+            
+            noise_power_original = np.mean(high_freq_original ** 2)
+            noise_power_cleaned = np.mean(high_freq_cleaned ** 2)
+            
+            if noise_power_original > 0 and noise_power_cleaned > 0:
+                sos_low = signal.butter(4, low_pass_freq, btype='low', fs=self.sampling_rate, output='sos')
+                signal_original = signal.sosfiltfilt(sos_low, original, axis=-1)
+                signal_cleaned = signal.sosfiltfilt(sos_low, cleaned, axis=-1)
+                
+                signal_power_original = np.mean(signal_original ** 2)
+                signal_power_cleaned = np.mean(signal_cleaned ** 2)
+                
+                if signal_power_original > 0 and signal_power_cleaned > 0:
+                    snr_original = 10 * np.log10(signal_power_original / noise_power_original)
+                    snr_cleaned = 10 * np.log10(signal_power_cleaned / noise_power_cleaned)
+                    return snr_cleaned - snr_original
+        except Exception:
+            pass
+        
+        return np.nan

@@ -278,14 +278,14 @@ class NeuralPlotter:
         mixed_trace = mixed_data[trial_idx, channel_idx, :]
         cleaned_trace = cleaned_data[trial_idx, channel_idx, :]
         
-        time_axis = np.arange(gt_trace.shape[0]) / self.sampling_rate 
+        sample_axis = np.arange(gt_trace.shape[0])
         
-        ax.plot(time_axis, mixed_trace, color=self.color_theme['grid'], linewidth=1, label='Mixed Data')
-        ax.plot(time_axis, cleaned_trace, color=self.color_theme['mean'], linewidth=1, label='Cleaned Data')
-        ax.plot(time_axis, gt_trace, color=self.color_theme['spike'], linewidth=1, label='Ground Truth')
+        ax.plot(sample_axis, mixed_trace, color=self.color_theme['grid'], linewidth=1, label='Mixed Data')
+        ax.plot(sample_axis, cleaned_trace, color=self.color_theme['mean'], linewidth=1, label='Cleaned Data')
+        ax.plot(sample_axis, gt_trace, color=self.color_theme['spike'], linewidth=1, label='Ground Truth')
         
         ax.set_title(title or f"Comparison - Trial {trial_idx}, Channel {channel_idx}")
-        ax.set_xlabel("Time (s)")
+        ax.set_xlabel("Sample")
         ax.set_ylabel("Amplitude (µV)")
         ax.grid(True, color=self.color_theme['grid'], linestyle='--')
         ax.spines['top'].set_visible(False)

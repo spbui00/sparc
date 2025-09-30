@@ -8,15 +8,15 @@ from tqdm import tqdm
 
 from .core.base_method import BaseSACMethod
 from .core.evaluator import Evaluator
-from .core.signal_data import SignalDataWithGroundTruth
+from .core.signal_data import SignalData, SignalDataWithGroundTruth
 from .core.plotting import NeuralPlotter
 
 
 class MethodTester:
-    def __init__(self, data: SignalDataWithGroundTruth, methods: Dict[str, BaseSACMethod], save: bool = False, save_folder: str = "./results"):
+    def __init__(self, data: SignalData | SignalDataWithGroundTruth, methods: Dict[str, BaseSACMethod], save: bool = False, save_folder: str = "./results"):
         """
         Args:
-            data: A SignalDataWithGroundTruth object containing the data to test.
+            data: A SignalData or SignalDataWithGroundTruth object containing the data to test.
             methods: A dictionary of artifact removal methods to test.
         """
         self.data = data
@@ -26,6 +26,7 @@ class MethodTester:
         self.cleaned_signals = {}
         self.save = save
         self.save_folder = save_folder
+        self.has_ground_truth = isinstance(data, SignalDataWithGroundTruth)
 
         for method in self.methods.values():
             if method.sampling_rate is None:
@@ -49,11 +50,17 @@ class MethodTester:
                 with open(os.path.join(self.save_folder, f"{name}_config.json"), 'w') as f:
                     json.dump(method.get_config(), f, indent=4)
             
-            self.results[name] = self.evaluate(
-                ground_truth=self.data.ground_truth,
-                original_mixed=self.data.raw_data,
-                cleaned=self.cleaned_signals[name]
-            )
+            if self.has_ground_truth:
+                self.results[name] = self.evaluate(
+                    ground_truth=self.data.ground_truth,
+                    original_mixed=self.data.raw_data,
+                    cleaned=self.cleaned_signals[name]
+                )
+            else:
+                self.results[name] = self.evaluate_without_ground_truth(
+                    original=self.data.raw_data,
+                    cleaned=self.cleaned_signals[name]
+                )
             
             pbar.set_postfix_str(f"✓ {name}")
         
@@ -77,6 +84,21 @@ class MethodTester:
         metrics.update(lfp_metrics)
 
         return metrics
+
+    def evaluate_without_ground_truth(self, original: np.ndarray, cleaned: np.ndarray) -> Dict[str, float]:
+        metrics = {}
+    
+        lfp_original = self.evaluator.extract_lfp(original)
+        lfp_cleaned = self.evaluator.extract_lfp(cleaned)
+        metrics.update(self.evaluator.calculate_signal_quality_metrics(original, cleaned))
+        metrics.update(self.evaluator.calculate_lfp_quality_metrics(lfp_original, lfp_cleaned))
+        
+        estimated_snr_improvement = self.evaluator.estimate_snr_improvement(original, cleaned)
+        if not np.isnan(estimated_snr_improvement):
+            metrics['estimated_snr_improvement_db'] = estimated_snr_improvement
+        
+        return metrics
+
 
     def get_results(self):
         """Returns the results of the tests."""
@@ -115,14 +137,61 @@ class MethodTester:
         plotter = NeuralPlotter(self.evaluator) 
 
         for method_name, cleaned in self.cleaned_signals.items():
-            plotter.plot_cleaned_comparison(
-                self.data.ground_truth,
-                self.data.raw_data,
-                cleaned,
-                trial_idx,
-                channel_idx,
-                title=f"Method: {method_name}"
-            )
+            if self.has_ground_truth:
+                plotter.plot_cleaned_comparison(
+                    self.data.ground_truth,
+                    self.data.raw_data,
+                    cleaned,
+                    trial_idx,
+                    channel_idx,
+                    title=f"Method: {method_name}"
+                )
+            else:
+                self._plot_original_vs_cleaned(
+                    self.data.raw_data,
+                    cleaned,
+                    trial_idx,
+                    channel_idx,
+                    title=f"Method: {method_name}"
+                )
+
+    def _plot_original_vs_cleaned(self, original: np.ndarray, cleaned: np.ndarray, 
+                                 trial_idx: int, channel_idx: int, title: str = "Original vs Cleaned"):
+        import matplotlib.pyplot as plt
+        
+        # Create sample axis (data shape is trials, channels, time)
+        sample_axis = np.arange(original.shape[2])
+        
+        fig, axes = plt.subplots(3, 1, figsize=(12, 10))
+        fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
+        
+        # Original signal
+        axes[0].plot(sample_axis, original[trial_idx, channel_idx, :], 'b-', alpha=0.7, label='Original')
+        axes[0].set_title('Original Signal')
+        axes[0].set_ylabel('Amplitude')
+        axes[0].set_xlabel('Sample')
+        axes[0].grid(True, alpha=0.3)
+        axes[0].legend()
+        
+        # Cleaned signal
+        axes[1].plot(sample_axis, cleaned[trial_idx, channel_idx, :], 'g-', alpha=0.7, label='Cleaned')
+        axes[1].set_title('Cleaned Signal')
+        axes[1].set_ylabel('Amplitude')
+        axes[1].set_xlabel('Sample')
+        axes[1].grid(True, alpha=0.3)
+        axes[1].legend()
+        
+        # Overlay comparison
+        axes[2].plot(sample_axis, original[trial_idx, channel_idx, :], 'b-', alpha=0.5, label='Original')
+        axes[2].plot(sample_axis, cleaned[trial_idx, channel_idx, :], 'g-', alpha=0.7, label='Cleaned')
+        axes[2].set_title('Overlay Comparison')
+        axes[2].set_xlabel('Sample')
+        axes[2].set_ylabel('Amplitude')
+        axes[2].grid(True, alpha=0.3)
+        axes[2].legend()
+        
+        plt.tight_layout()
+        plt.show()
 
     def compare(self, weights: Optional[Dict[str, float]] = None):
         if not self.results:
@@ -130,13 +199,23 @@ class MethodTester:
             return
 
         if weights is None:
-            weights = {
-                'snr_improvement_db': 2.0, 
-                'mua_correlation': 1.5,
-                'hit_rate': 1.5,
-                'lfp_psd_correlation': 1.0,
-                'false_positive_rate': -1.0, # Negative weight penalizes false positives
-            }
+            if self.has_ground_truth:
+                weights = {
+                    'snr_improvement_db': 2.0, 
+                    'mua_correlation': 1.5,
+                    'hit_rate': 1.5,
+                    'lfp_psd_correlation': 1.0,
+                    'false_positive_rate': -1.0, # Negative weight penalizes false positives
+                }
+            else:
+                weights = {
+                    'estimated_snr_improvement_db': 1.0,
+                    'lfp_spectral_preservation': 2.0,
+                    'lfp_power_preservation_ratio': 2.0,
+                    'kurtosis_reduction': 1.0,
+                    'rms_reduction_ratio': 0.5,
+                    'variance_reduction_ratio': 0.5,
+                }
         
         print("\n=== Weighted Scoring Summary ===")
         print("Scoring based on absolute performance (higher is better).")
@@ -155,15 +234,22 @@ class MethodTester:
                     continue
 
                 metric_score = 0.0
-                if metric_name == 'snr_improvement_db':
+                if metric_name in ['snr_improvement_db', 'estimated_snr_improvement_db']:
                     # Only award points for POSITIVE improvement.
                     metric_score = max(0, value)
                 elif metric_name == 'false_positive_rate':
                     # Penalize directly based on the rate. The negative weight handles the rest.
                     metric_score = value
-                elif 'correlation' in metric_name or 'hit_rate' in metric_name:
+                elif 'correlation' in metric_name or 'hit_rate' in metric_name or 'preservation' in metric_name:
                     # Use the value directly, but clamp at 0 to prevent negative correlations from helping.
                     metric_score = max(0, value)
+                elif 'reduction' in metric_name:
+                    metric_score = max(0, value)
+                elif 'ratio' in metric_name:
+                    if 'power_preservation' in metric_name:
+                        metric_score = 1.0 - abs(1.0 - value) if not np.isnan(value) else 0
+                    else:
+                        metric_score = max(0, value)
                 else:
                     metric_score = value
                 
@@ -220,11 +306,17 @@ class MethodTester:
                     print(f"📋 Config loaded for {method_name}")
             
             # Evaluate this method and store in results
-            self.results[method_name] = self.evaluate(
-                ground_truth=self.data.ground_truth,
-                original_mixed=self.data.raw_data,
-                cleaned=cleaned_signal
-            )
+            if self.has_ground_truth:
+                self.results[method_name] = self.evaluate(
+                    ground_truth=self.data.ground_truth,
+                    original_mixed=self.data.raw_data,
+                    cleaned=cleaned_signal
+                )
+            else:
+                self.results[method_name] = self.evaluate_without_ground_truth(
+                    original=self.data.raw_data,
+                    cleaned=cleaned_signal
+                )
             
             print(f"✅ Successfully loaded {method_name}")
             return True
@@ -234,7 +326,7 @@ class MethodTester:
             return False
     
     @classmethod
-    def load_saved_results(cls, data: SignalDataWithGroundTruth, results_folder: str):
+    def load_saved_results(cls, data: SignalData | SignalDataWithGroundTruth, results_folder: str):
         cleaned_files = glob.glob(os.path.join(results_folder, "*_cleaned.npy"))
         if not cleaned_files:
             raise ValueError(f"No cleaned signal files found in {results_folder}")
@@ -281,7 +373,7 @@ class MethodTester:
         return tester
     
     @classmethod
-    def load_specific_method(cls, data: SignalDataWithGroundTruth, file_path: str, results_folder: str = None):
+    def load_specific_method(cls, data: SignalData | SignalDataWithGroundTruth, file_path: str, results_folder: str = None):
         tester = cls(data, {}, save=False)
         if results_folder:
             tester.save_folder = results_folder

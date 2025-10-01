@@ -3,8 +3,6 @@ from sparc import DataHandler, NeuralAnalyzer, NeuralPlotter
 from sparc.core.signal_data import ArtifactTriggers
 from sparc import MethodTester
 from sparc.core.signal_data import SignalData, SignalDataWithGroundTruth, SimulatedData
-import matplotlib.pyplot as plt
-import numpy as np
 from scipy.signal import resample
 
 

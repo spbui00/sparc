@@ -1,11 +1,12 @@
 from sparc import DataHandler, SignalDataWithGroundTruth, SignalData, NeuralAnalyzer, NeuralPlotter
 import numpy as np 
 from scipy import signal
-from typing import cast, final
+from typing import cast
 import matplotlib.pyplot as plt
 
 
-SWEC_SAMPLING_RATE = 512 
+SWEC_SAMPLING_RATE = 512
+SAMPLING_RATE = 30000
 
 def split_data(selected_data, patient_id:str='01'):
     seizure = np.array(selected_data[patient_id]['seizure_clips'])
@@ -30,10 +31,10 @@ def split_data(selected_data, patient_id:str='01'):
 def resample_signal(data, original_rate, target_rate) -> np.ndarray:
     data_float64 = data.astype(np.float64)
     
-    num_original_samples = data_float64.shape[-1]
+    num_original_samples = data_float64.shape[0]  # samples are along axis 0
     num_target_samples = int(num_original_samples * target_rate / original_rate)
     
-    resampled_data = signal.resample(data_float64, num_target_samples, axis=-1)
+    resampled_data = signal.resample(data_float64, num_target_samples, axis=0)
     
     return cast(np.ndarray, resampled_data)
 
@@ -64,36 +65,33 @@ def plot_raw_artifact(raw_artifact, original_sampling_rate):
 def main():
     data_handler = DataHandler()
     data = data_handler.load_pickle_data('../research/datasets/SWEC-ETHZ/selected_clips_pat123.pkl')
-    _, non_seizure_signal = split_data(data, patient_id='01')
+    seizure_signal, non_seizure_signal = split_data(data, patient_id='01')
     trials, channels, samples = non_seizure_signal.raw_data.shape
+    final_data = non_seizure_signal.raw_data
+    print(f"Final data shape: {final_data.shape}")
 
-    artifacts_data = data_handler.load_matlab_data('../research/generate_dataset/SimulatedArtifact.mat')
-    artifacts = np.array(artifacts_data['SimArtifact'])
-    print(max(artifacts.flatten()), min(artifacts.flatten()))
+    artifacts_data = data_handler.load_matlab_data('../research/generate_dataset/SimulatedData.mat')
+    artifacts = np.array(artifacts_data['SimArtifact']) # (samples, channels, arrays)
+    # print(max(artifacts.flatten()), min(artifacts.flatten()))
     artifacts_indices = np.array(artifacts_data['AllStimIdx'])
 
     num_samples_orig = artifacts.shape[0]
     total_channels = artifacts.shape[1] * artifacts.shape[2] # 64 * 2 = 128
     artifacts_reshaped = artifacts.reshape(num_samples_orig, total_channels, order='F')
-    final_artifacts = np.tile(artifacts_reshaped.T, (trials, 1, 1))
-    final_artifacts = final_artifacts[:, :channels, :]
 
-    upsampled_data = signal.resample(non_seizure_signal.raw_data, int(samples * 30000 / SWEC_SAMPLING_RATE), axis=-1)
-
-    print(f"Final artifact shape: {final_artifacts.shape}")
-
-    final_data = upsampled_data
-    sampling_rate = 30000 
+    artifacts_downsampled = resample_signal(artifacts_reshaped, SAMPLING_RATE, SWEC_SAMPLING_RATE)
+    final_artifacts = np.tile(artifacts_downsampled.T, (trials, 1, 1))  
+    final_artifacts = final_artifacts[:, :channels, :] 
 
     mixed = SignalDataWithGroundTruth(
         raw_data=final_data + final_artifacts,
-        sampling_rate=sampling_rate,
+        sampling_rate=SAMPLING_RATE,
         ground_truth=final_data,
         artifacts=final_artifacts
     )
 
     # save to npz 
-    np.savez_compressed('../data/added_artifacts_swec_data_30000.npz', 
+    np.savez_compressed(f'../data/added_artifacts_swec_data_{SAMPLING_RATE}.npz', 
         mixed_data=mixed.raw_data, 
         ground_truth=mixed.ground_truth, 
         artifacts=mixed.artifacts, 
@@ -103,12 +101,9 @@ def main():
     analyzer = NeuralAnalyzer(mixed.sampling_rate)
     plotter = NeuralPlotter(analyzer)
 
-    plotter.plot_trial_channels(mixed.artifacts, 0, [0], title='Mixed Signal with Artifacts')
-    plotter.plot_trace_comparison(
-        ground_truth=mixed.ground_truth,
-        mixed_data=mixed.raw_data,
-        trial_idx=0,
-        channel_idx=0,
+    plotter.plot_all_channels_trial(
+        mixed.raw_data,
+        0
     )
 
 if __name__ == "__main__":

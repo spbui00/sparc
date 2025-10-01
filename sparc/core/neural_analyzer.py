@@ -171,7 +171,8 @@ class NeuralAnalyzer:
         if data.ndim != 3:
             raise ValueError("Input data must be 3D (trials, channels, timesteps).")
         
-        sos = signal.butter(4, cutoff_freq, btype='low', fs=self.sampling_rate, output='sos')
+        fs = float(np.asarray(self.sampling_rate).item())
+        sos = signal.butter(4, cutoff_freq, btype='low', fs=fs, output='sos')
         lfp_data = signal.sosfiltfilt(sos, data, axis=2)
         return lfp_data
 
@@ -179,14 +180,15 @@ class NeuralAnalyzer:
         if data.ndim != 3:
             raise ValueError("Input data must be 3D (trials, channels, timesteps).")
             
+        fs = float(np.asarray(self.sampling_rate).item())
         # Band-pass filter along the time axis (axis=2)
-        sos_bp = signal.butter(4, [high_pass_freq, low_pass_freq], btype='bandpass', fs=self.sampling_rate, output='sos')
+        sos_bp = signal.butter(4, [high_pass_freq, low_pass_freq], btype='bandpass', fs=fs, output='sos')
         mua_data = signal.sosfiltfilt(sos_bp, data, axis=2)
         
         mua_data = np.abs(mua_data)
         
         # Low-pass filter to get the envelope
-        sos_lp = signal.butter(4, 200.0, btype='low', fs=self.sampling_rate, output='sos')
+        sos_lp = signal.butter(4, 200.0, btype='low', fs=fs, output='sos')
         mua_data = signal.sosfiltfilt(sos_lp, mua_data, axis=2)
         return mua_data
 
@@ -198,7 +200,8 @@ class NeuralAnalyzer:
         post_samples = int(self.sampling_rate * post_ms / 1000)
         
         # Define filter once
-        sos = signal.butter(4, [250, 4000], btype='bandpass', fs=self.sampling_rate, output='sos')
+        fs = float(np.asarray(self.sampling_rate).item())
+        sos = signal.butter(4, [250, 4000], btype='bandpass', fs=fs, output='sos')
         
         # Filter all data at once for efficiency
         filtered_data_all = signal.sosfiltfilt(sos, data, axis=2)

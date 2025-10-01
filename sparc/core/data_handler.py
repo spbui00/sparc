@@ -35,7 +35,7 @@ class DataHandler:
         raise ValueError(f"Unknown source format: {source_format}")
 
     def load_npz_data(self, filepath: str) -> dict:
-        return np.load(filepath)
+        return np.load(filepath, allow_pickle=True)
 
     def load_matlab_data(self, filepath: str) -> dict:
         try:

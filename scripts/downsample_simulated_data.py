@@ -80,7 +80,6 @@ if __name__ == "__main__":
     plotter = NeuralPlotter(NeuralAnalyzer(sampling_rate=DOWNSAMPLE_RATE))
     # plotter.plot_all_channels_trial(data_to_save['raw_data'], 0)
     plotter.plot_trace_comparison(data_to_save['ground_truth'], data_to_save['raw_data'], 0, 0)
-    # plotter.plot_trial_channels(data_to_save['raw_data'], 0, [0, 1, 2, 8, 24])
 
     print(f"\nSuccessfully processed and saved data to '{OUTPUT_FILE}'")
     print(f"New sampling rate: {DOWNSAMPLE_RATE} Hz")

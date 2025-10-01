@@ -1,9 +1,10 @@
 import numpy as np
-from typing import Literal, Optional, Any
+from typing import Literal, Optional, Any, List, Tuple
 from sparc import BaseSACMethod
 from sklearn.decomposition import FastICA
 import matplotlib.pyplot as plt
 from numpy import intp
+from scipy import signal
 
 
 class ICA(BaseSACMethod):
@@ -14,6 +15,8 @@ class ICA(BaseSACMethod):
         mode: Literal['global', 'targeted']='targeted',
         pre_ms: float = 5.0,
         post_ms: float = 25,
+        highpass_cutoff: Optional[float] = None,
+        filter_order: int = 4,
         **kwargs):
         super().__init__(**kwargs)
         self._features_axis = features_axis
@@ -25,16 +28,92 @@ class ICA(BaseSACMethod):
         self.mode = mode
         self.pre_ms = pre_ms
         self.post_ms = post_ms
+        self.highpass_cutoff = highpass_cutoff
+        self.filter_order = filter_order
+        self.b_ = None
+        self.a_ = None
         if self.sampling_rate is not None:
             self._update_ms_to_samples()
+            self._design_filter()
     
     def _update_ms_to_samples(self):
         self.pre_samples = int(np.round(self.pre_ms * self.sampling_rate / 1000))
         self.post_samples = int(np.round(self.post_ms * self.sampling_rate / 1000))
 
+    def _design_filter(self):
+        if self.highpass_cutoff is not None and self.sampling_rate is not None:
+            # Ensure sampling_rate is a scalar
+            fs = float(np.asarray(self.sampling_rate).item())
+            nyquist = 0.5 * fs
+            if not 0 < self.highpass_cutoff < nyquist:
+                raise ValueError(
+                    f"High-pass cutoff frequency ({self.highpass_cutoff} Hz) "
+                    f"must be between 0 and the Nyquist frequency ({nyquist} Hz)."
+                )
+            self.b_, self.a_ = signal.butter(
+                self.filter_order, self.highpass_cutoff, btype="high", fs=fs
+            )
+        else:
+            print("No highpass filter applied")
+            self.b_, self.a_ = None, None
+
     def set_sampling_rate(self, sampling_rate: float):
-        self.sampling_rate = sampling_rate
+        super().set_sampling_rate(sampling_rate)
         self._update_ms_to_samples()
+        self._design_filter()
+
+    def _build_artifact_windows(
+        self,
+        artifact_markers,
+        num_samples: int
+    ) -> List[List[Tuple[int, int, int]]]:
+        windows_per_trial: List[List[Tuple[int, int, int]]] = []
+        starts_per_trial = getattr(artifact_markers, "starts", artifact_markers)
+
+        for trial_starts in starts_per_trial:
+            trial_windows: List[Tuple[int, int, int]] = []
+
+            for channel_idx, channel_starts in enumerate(trial_starts):
+                if channel_starts is None:
+                    continue
+
+                markers = np.asarray(channel_starts).astype(int).ravel()
+                if markers.size == 0:
+                    continue
+
+                markers = markers[(markers >= 0) & (markers < num_samples)]
+                if markers.size == 0:
+                    continue
+
+                markers = np.unique(markers)
+
+                # Build initial windows
+                raw_windows: List[Tuple[int, int]] = []
+                for marker in markers:
+                    start = max(int(marker) - self.pre_samples, 0)
+                    end = min(int(marker) + self.post_samples, num_samples)
+                    if end > start:
+                        raw_windows.append((start, end))
+
+                if not raw_windows:
+                    continue
+
+                raw_windows.sort(key=lambda w: w[0])
+
+                # Merge overlaps
+                merged: List[Tuple[int, int]] = []
+                for start, end in raw_windows:
+                    if not merged or start > merged[-1][1]:
+                        merged.append((start, end))
+                    else:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+                for start, end in merged:
+                    trial_windows.append((channel_idx, start, end))
+
+            windows_per_trial.append(trial_windows)
+
+        return windows_per_trial
 
     def _max_variance(self, sources: np.ndarray) -> intp:
         variances = np.var(sources, axis=0)
@@ -66,31 +145,32 @@ class ICA(BaseSACMethod):
             raise ValueError(f"Unknown artifact_identify_method: {self.artifact_identify_method}")
 
     def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'ICA':
+        if self.b_ is not None and self.a_ is not None:
+            data_to_fit = signal.filtfilt(self.b_, self.a_, data, axis=-1)
+        else:
+            data_to_fit = data
+
         if self.mode == 'targeted':
             if artifact_markers is None:
                 raise ValueError("`artifact_markers` must be provided for 'targeted' mode fit.")
             
-            # Store artifact locations for each trial
-            self.artifact_locations_per_trial_ = []
-            
-            # Collect all artifact epochs from all trials and channels
+            num_samples = data_to_fit.shape[-1]
+            windows_per_trial = self._build_artifact_windows(artifact_markers, num_samples)
+            self.artifact_locations_per_trial_ = windows_per_trial
+
             all_artifact_epochs = []
-            
-            for trial_idx in range(len(artifact_markers.starts)):
-                trial_locations = []
-                for channel_idx in range(len(artifact_markers.starts[trial_idx])):
-                    for start_idx in artifact_markers.starts[trial_idx][channel_idx]:
-                        start = start_idx - self.pre_samples
-                        end = start_idx + self.post_samples
-                        if start >= 0 and end < data.shape[-1]:
-                            # Extract epoch from specific trial and channel
-                            if self._features_axis in [-1, 2]:
-                                epoch = data[trial_idx, ..., start:end]
-                            else:
-                                epoch = data[trial_idx, :, start:end]
-                            all_artifact_epochs.append(epoch)
-                            trial_locations.append((channel_idx, start, end))
-                self.artifact_locations_per_trial_.append(trial_locations)
+
+            for trial_idx, trial_windows in enumerate(windows_per_trial):
+                for channel_idx, start, end in trial_windows:
+                    if end <= start:
+                        continue
+                    if self._features_axis in [-1, 2]:
+                        epoch = data_to_fit[trial_idx, ..., start:end]
+                    else:
+                        epoch = data_to_fit[trial_idx, :, start:end]
+                    if epoch.shape[-1] == 0:
+                        continue
+                    all_artifact_epochs.append(epoch)
 
             if not all_artifact_epochs:
                 raise ValueError("No artifact epochs were extracted for fitting.")
@@ -99,7 +179,7 @@ class ICA(BaseSACMethod):
             concatenated_epochs = np.hstack(all_artifact_epochs)
             fit_data = concatenated_epochs[np.newaxis, ...] if data.ndim == 3 else concatenated_epochs
         else:
-            fit_data = data
+            fit_data = data_to_fit
 
         data_moved = np.moveaxis(fit_data, self._features_axis, -1)
         num_features = data_moved.shape[-1]
@@ -120,8 +200,13 @@ class ICA(BaseSACMethod):
         if not self.is_fitted:
             raise ValueError("Method must be fitted before transforming data.")
         
+        if self.b_ is not None and self.a_ is not None:
+            data_to_transform = signal.filtfilt(self.b_, self.a_, data, axis=-1)
+        else:
+            data_to_transform = data
+
         if self.mode == 'global':
-            data_moved = np.moveaxis(data, self._features_axis, -1)
+            data_moved = np.moveaxis(data_to_transform, self._features_axis, -1)
             output_shape = data_moved.shape
             reshaped_data = data_moved.reshape(-1, output_shape[-1])
             
@@ -136,7 +221,7 @@ class ICA(BaseSACMethod):
             if not hasattr(self, 'artifact_locations_per_trial_'):
                 raise ValueError("Fit must be called with artifact_markers in targeted mode before transform.")
 
-            final_cleaned_data = data.copy()
+            final_cleaned_data = data_to_transform.copy()
             
             for trial_idx, trial_locations in enumerate(self.artifact_locations_per_trial_):
                 if not trial_locations:
@@ -146,9 +231,9 @@ class ICA(BaseSACMethod):
                 trial_artifact_epochs = []
                 for channel_idx, start, end in trial_locations:
                     if self._features_axis in [-1, 2]:
-                        epoch = data[trial_idx, ..., start:end]
+                        epoch = data_to_transform[trial_idx, ..., start:end]
                     else:
-                        epoch = data[trial_idx, :, start:end]
+                        epoch = data_to_transform[trial_idx, :, start:end]
                     trial_artifact_epochs.append(epoch)
                 
                 if not trial_artifact_epochs:

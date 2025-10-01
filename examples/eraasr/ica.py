@@ -15,42 +15,6 @@ def ica():
     post_artifact_train_samples = 500
 
     orig_data = data_obj['arr_0'] # (trials, channels, samples)
-    raw_data = orig_data[:, :, pre_artifact_train_samples:pre_artifact_train_samples + post_artifact_train_samples]
-    
-    data_obj = SignalData(
-        raw_data=raw_data,
-        sampling_rate=1000
-    )
-    data = data_obj.raw_data
-    print(data.shape)
-    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
-    plotter = NeuralPlotter(analyzer)
-    plotter.plot_all_channels_trial(data_obj.raw_data, 0)
-
-    ica = ICA(
-        n_components=2,
-        features_axis=1,
-        artifact_identify_method='kurtosis_max',
-        mode='global'
-    )
-    ica.set_sampling_rate(data_obj.sampling_rate)
-    ica.fit(data, artifact_markers=data_obj.artifact_markers)
-    ica.plot_components()
-    cleaned_data = ica.transform(data)
-
-    plotter.plot_trace_comparison(cleaned_data, data_obj.raw_data, 0, 0, "Just artifact part")
-    cleaned_data = np.concatenate([orig_data[:, :, :pre_artifact_train_samples], cleaned_data, orig_data[:, :, pre_artifact_train_samples + post_artifact_train_samples:]], axis=2)
-    plotter.plot_trace_comparison(cleaned_data, orig_data, 0, 0, "All data")
-    plotter.plot_trace_comparison(cleaned_data, orig_data, 0, 20, "All data")
-
-def ica():
-    data_handler = DataHandler()
-    data_obj = data_handler.load_npz_data('../../data/eraasr_1000.npz')
-    
-    pre_artifact_train_samples = 200
-    post_artifact_train_samples = 500
-
-    orig_data = data_obj['arr_0'] # (trials, channels, samples)
     artifact_markers = ArtifactTriggers(
         starts=[[np.array([pre_artifact_train_samples])]]
     )
@@ -70,7 +34,7 @@ def ica():
         n_components=2,
         features_axis=1,
         artifact_identify_method='kurtosis_max',
-        mode='global',
+        mode='targeted',
         pre_ms=0,
         post_ms=(post_artifact_train_samples - pre_artifact_train_samples) * 1000 / data_obj.sampling_rate,
     )
@@ -129,4 +93,4 @@ def multiple_icas():
 
 
 if __name__ == "__main__":
-    multiple_icas()
+    ica()

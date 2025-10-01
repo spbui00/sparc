@@ -209,12 +209,12 @@ class MethodTester:
                 }
             else:
                 weights = {
-                    'estimated_snr_improvement_db': 1.0,
+                    # 'estimated_snr_improvement_db': 1.0,
                     'lfp_spectral_preservation': 2.0,
                     'lfp_power_preservation_ratio': 2.0,
-                    'kurtosis_reduction': 1.0,
-                    'rms_reduction_ratio': 0.5,
-                    'variance_reduction_ratio': 0.5,
+                    # 'kurtosis_reduction': 1.0,
+                    # 'rms_reduction_ratio': 0.5,
+                    # 'variance_reduction_ratio': 0.5,
                 }
         
         print("\n=== Weighted Scoring Summary ===")

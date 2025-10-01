@@ -122,7 +122,7 @@ def main():
     
     mixed = SignalDataWithGroundTruth(
         raw_data=final_data + final_artifacts,
-        sampling_rate=SAMPLING_RATE,
+        sampling_rate=SWEC_SAMPLING_RATE,
         ground_truth=final_data,
         artifacts=final_artifacts,
         artifact_markers=starts_3d

@@ -31,9 +31,9 @@ def ica():
         features_axis=1,
         artifact_identify_method='kurtosis_min',
         mode='global',
-        pre_ms=0.5,
-        post_ms=4.0,
-        highpass_cutoff=0.1,
+        # pre_ms=0.5,
+        # post_ms=4.0,
+        highpass_cutoff=0.5,
     )
     ica.set_sampling_rate(data_obj.sampling_rate)
     ica.fit(data, artifact_markers=data_obj.artifact_markers)
@@ -42,6 +42,7 @@ def ica():
 
     plotter.plot_trace_comparison(cleaned_data, data_obj.raw_data, 0, 0)
     plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 0)
+    plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 30)
     plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 80)
 
 
@@ -92,4 +93,4 @@ def multiple_icas():
 
 
 if __name__ == "__main__":
-    multiple_icas()
+    ica()

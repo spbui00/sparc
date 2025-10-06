@@ -25,14 +25,19 @@ def ica():
     analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
     plotter = NeuralPlotter(analyzer)
     # plotter.plot_all_channels_trial(data_obj.raw_data, 0)
+    # plotter.plot_trial_channel(
+    #     data_obj.raw_data,
+    #     0,
+    #     0
+    # )
 
     ica = ICA(
         n_components=2,
         features_axis=1,
         artifact_identify_method='kurtosis_min',
         mode='global',
-        # pre_ms=0.5,
-        # post_ms=4.0,
+        pre_ms=0,
+        post_ms=4.0,
         highpass_cutoff=0.5,
     )
     ica.set_sampling_rate(data_obj.sampling_rate)

@@ -63,27 +63,50 @@ class PCA(BaseSACMethod):
         self._design_filter()
 
     def _build_artifact_windows(self, artifact_markers, num_samples: int) -> List[List[Tuple[int, int, int]]]:
-        if not hasattr(artifact_markers, 'starts'):
-            raise ValueError("artifact_markers must have 'starts' attribute")
-        
-        windows_per_trial = []
-        
-        for trial_idx, trial_markers in enumerate(artifact_markers.starts):
-            trial_windows = []
-            
-            for channel_idx, channel_markers in enumerate(trial_markers):
-                if len(channel_markers) == 0:
+        starts_per_trial = getattr(artifact_markers, "starts", artifact_markers)
+        windows_per_trial: List[List[Tuple[int, int, int]]] = []
+
+        for trial_starts in starts_per_trial:
+            trial_windows: List[Tuple[int, int, int]] = []
+
+            for channel_idx, channel_starts in enumerate(trial_starts):
+                if channel_starts is None:
                     continue
-                
-                for marker in channel_markers:
-                    start = marker + self.pre_samples
-                    end = marker + self.post_samples
-                    
-                    if start >= 0 and end <= num_samples:
-                        trial_windows.append((channel_idx, start, end))
-            
+
+                markers = np.asarray(channel_starts).astype(int).ravel()
+                if markers.size == 0:
+                    continue
+
+                markers = markers[(markers >= 0) & (markers < num_samples)]
+                if markers.size == 0:
+                    continue
+
+                markers = np.unique(markers)
+
+                raw_windows: List[Tuple[int, int]] = []
+                for marker in markers:
+                    start = max(int(marker) - self.pre_samples, 0)
+                    end = min(int(marker) + self.post_samples, num_samples)
+                    if end > start:
+                        raw_windows.append((start, end))
+
+                if not raw_windows:
+                    continue
+
+                raw_windows.sort(key=lambda w: w[0])
+
+                merged: List[Tuple[int, int]] = []
+                for start, end in raw_windows:
+                    if not merged or start > merged[-1][1]:
+                        merged.append((start, end))
+                    else:
+                        merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+
+                for start, end in merged:
+                    trial_windows.append((channel_idx, start, end))
+
             windows_per_trial.append(trial_windows)
-        
+
         return windows_per_trial
 
     def _identify_noise_components(self, explained_variance_ratio: np.ndarray) -> List[int]:
@@ -107,55 +130,110 @@ class PCA(BaseSACMethod):
         else:
             raise ValueError(f"Unknown noise_identify_method: {self.noise_identify_method}")
 
-    def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'PCA':
+    def _apply_filter(self, data: np.ndarray) -> np.ndarray:
         if self.b_ is not None and self.a_ is not None:
-            data_to_fit = signal.filtfilt(self.b_, self.a_, data, axis=-1)
+            return signal.filtfilt(self.b_, self.a_, data, axis=-1)
+        return data
+
+    def _reshape_for_pca(self, data: np.ndarray) -> np.ndarray:
+        data_moved = np.moveaxis(data, self._features_axis, -1)
+        original_shape = data_moved.shape
+        return data_moved.reshape(-1, original_shape[-1])
+
+    def _extract_artifact_signal(self, data: np.ndarray, artifact_markers) -> np.ndarray:
+        num_samples = data.shape[-1]
+        windows_per_trial = self._build_artifact_windows(artifact_markers, num_samples)
+        self.artifact_locations_per_trial_ = windows_per_trial
+
+        n_trials = data.shape[0]
+        channel_axis = self._features_axis if self._features_axis is not None else 1
+        time_axis = 2 if channel_axis == 1 else 1
+        n_channels = data.shape[channel_axis]
+
+        concatenated_signal = [[] for _ in range(n_trials)]
+
+        for trial_idx, trial_windows in enumerate(windows_per_trial):
+            trial_segments = {ch: [] for ch in range(n_channels)}
+
+            for channel_idx, start, end in trial_windows:
+                if end <= start:
+                    continue
+                if time_axis == 2:
+                    segment = data[trial_idx, channel_idx, start:end]
+                else:
+                    segment = data[trial_idx, start:end, channel_idx]
+                trial_segments[channel_idx].append(segment)
+
+            trial_concat = []
+            for ch in range(n_channels):
+                if trial_segments[ch]:
+                    trial_concat.append(np.concatenate(trial_segments[ch]))
+                else:
+                    trial_concat.append(np.array([]))
+
+            concatenated_signal[trial_idx] = trial_concat
+
+        non_empty_trials = [
+            [seg for seg in trial if len(seg) > 0] for trial in concatenated_signal
+            if any(len(seg) > 0 for seg in trial)
+        ]
+        if not non_empty_trials:
+            return np.zeros((n_trials, n_channels, 0))
+
+        max_length = max(max(len(seg) for seg in trial) for trial in non_empty_trials)
+
+        artifact_signal = np.zeros((n_trials, n_channels, max_length))
+        for trial_idx, trial in enumerate(concatenated_signal):
+            for ch_idx, seg in enumerate(trial):
+                if len(seg) > 0:
+                    artifact_signal[trial_idx, ch_idx, :len(seg)] = seg
+
+        if time_axis == 2:
+            return artifact_signal
         else:
-            data_to_fit = data
+            return np.transpose(artifact_signal, (0, 2, 1))
+
+    def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'PCA':
+        data_to_fit = self._apply_filter(data)
 
         if self.mode == 'targeted':
             if artifact_markers is None:
                 raise ValueError("artifact_markers must be provided for 'targeted' mode fit.")
-            
+
+            if self._features_axis != 1:
+                raise ValueError("In targeted mode, features_axis must be 1 (channels) to keep PCA features consistent.")
+
             num_samples = data_to_fit.shape[-1]
             windows_per_trial = self._build_artifact_windows(artifact_markers, num_samples)
             self.artifact_locations_per_trial_ = windows_per_trial
 
-            all_artifact_epochs = []
-            expected_window_size = self.post_samples - self.pre_samples
-            
+            all_artifact_epochs: List[np.ndarray] = []
             for trial_idx, trial_windows in enumerate(windows_per_trial):
-                for channel_idx, start, end in trial_windows:
+                for _, start, end in trial_windows:
                     if end <= start:
                         continue
-                    
-                    # Extract only the specific channel's data for this window
-                    if self._features_axis in [-1, 2]:
-                        # Time is last axis, extract specific channel
-                        epoch = data_to_fit[trial_idx, channel_idx, start:end]
-                    else:
-                        # Channel is last axis
-                        epoch = data_to_fit[trial_idx, start:end, channel_idx]
-                    
-                    if epoch.size != expected_window_size:
+                    epoch_2d = data_to_fit[trial_idx, :, start:end]  # (channels, epoch_len)
+                    if epoch_2d.shape[-1] == 0:
                         continue
-                    
-                    if epoch.size > 0:
-                        # Reshape to (1, n_features) for stacking
-                        all_artifact_epochs.append(epoch.reshape(1, -1))
+                    all_artifact_epochs.append(epoch_2d)
 
             if not all_artifact_epochs:
-                raise ValueError("No valid artifact epochs found for PCA fitting. Check that your artifact windows are not all at the edges of the signal.")
-            
-            # Stack all epochs
-            X = np.vstack(all_artifact_epochs)
-            
-        else:  # global mode
-            data_moved = np.moveaxis(data_to_fit, self._features_axis, -1)
-            original_shape = data_moved.shape
-            X = data_moved.reshape(-1, original_shape[-1])
+                raise ValueError("No artifact epochs were extracted for fitting.")
 
-        self.pca_ = SklearnPCA(n_components=self.n_components)
+            concatenated_epochs = np.hstack(all_artifact_epochs)  # (channels, total_len)
+            fit_data = concatenated_epochs[np.newaxis, ...]  # (1, channels, total_len)
+        else:
+            fit_data = data_to_fit
+
+        data_moved = np.moveaxis(fit_data, self._features_axis, -1)
+        num_features = data_moved.shape[-1]
+        X = data_moved.reshape(-1, num_features)
+
+        n_components = self.n_components if self.n_components is not None else num_features
+        if n_components > num_features:
+            raise ValueError(f"n_components ({n_components}) cannot be greater than the number of features ({num_features}).")
+
+        self.pca_ = SklearnPCA(n_components=n_components)
         self.pca_.fit(X)
         
         self.noise_components_ = self._identify_noise_components(
@@ -169,72 +247,85 @@ class PCA(BaseSACMethod):
         if not self.is_fitted:
             raise ValueError("Method must be fitted before transforming data.")
         
-        if self.b_ is not None and self.a_ is not None:
-            data_to_transform = signal.filtfilt(self.b_, self.a_, data, axis=-1)
-        else:
-            data_to_transform = data
+        data_to_transform = self._apply_filter(data)
 
         if self.mode == 'global':
+            reshaped_data = self._reshape_for_pca(data_to_transform)
+            
+            cleaned_reshaped_data = self._apply_pca_transform(reshaped_data)
+            
             data_moved = np.moveaxis(data_to_transform, self._features_axis, -1)
             output_shape = data_moved.shape
-            reshaped_data = data_moved.reshape(-1, output_shape[-1])
-            
-            pca_data = self.pca_.transform(reshaped_data)
-            
-            cleaned_pca_data = pca_data.copy()
-            cleaned_pca_data[:, self.noise_components_] = 0
-            
-            cleaned_reshaped_data = self.pca_.inverse_transform(cleaned_pca_data)
-            
             cleaned_data_moved = cleaned_reshaped_data.reshape(output_shape)
             cleaned_data = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
             
             return cleaned_data
         
-        else:  # targeted mode
-            if not hasattr(self, 'artifact_locations_per_trial_'):
-                raise ValueError("Fit must be called with artifact_markers in targeted mode before transform.")
-            
-            final_cleaned_data = data_to_transform.copy()
-            expected_window_size = self.post_samples - self.pre_samples
-            
-            for trial_idx, trial_locations in enumerate(self.artifact_locations_per_trial_):
-                if not trial_locations:
+        else: 
+            return self._process_targeted_windows(data_to_transform)
+
+    def _apply_pca_transform(self, data: np.ndarray) -> np.ndarray:
+        pca_data = self.pca_.transform(data)
+        
+        # Remove noise components
+        cleaned_pca_data = pca_data.copy()
+        cleaned_pca_data[:, self.noise_components_] = 0
+        
+        # Transform back to original space
+        cleaned_data = self.pca_.inverse_transform(cleaned_pca_data)
+        return cleaned_data
+
+    def _process_targeted_windows(self, data: np.ndarray) -> np.ndarray:
+        if not hasattr(self, 'artifact_locations_per_trial_'):
+            raise ValueError("Fit must be called with artifact_markers in targeted mode before transform.")
+        
+        n_trials = data.shape[0]
+        if self._features_axis != 1:
+            raise ValueError("In targeted mode, features_axis must be 1 (channels) to keep PCA features consistent.")
+
+        n_channels = data.shape[1]
+
+        final_cleaned_data = data.copy()
+
+        for trial_idx, trial_windows in enumerate(self.artifact_locations_per_trial_):
+            if not trial_windows:
+                continue
+
+            trial_artifact_epochs: List[np.ndarray] = []
+            for _, start, end in trial_windows:
+                if end <= start:
                     continue
-                
-                for channel_idx, start, end in trial_locations:
-                    if end <= start:
-                        continue
-                    
-                    if self._features_axis in [-1, 2]:
-                        artifact_window = data_to_transform[trial_idx, channel_idx, start:end]
-                    else:
-                        # Channel is last axis
-                        artifact_window = data_to_transform[trial_idx, start:end, channel_idx]
-                    
-                    # Skip windows that are not the expected size (edge cases)
-                    if artifact_window.size != expected_window_size:
-                        continue
-                    
-                    # Apply PCA to this window
-                    window_reshaped = artifact_window.reshape(1, -1)
-                    pca_window = self.pca_.transform(window_reshaped)
-                    
-                    # Remove noise components
-                    cleaned_pca_window = pca_window.copy()
-                    cleaned_pca_window[:, self.noise_components_] = 0
-                    
-                    # Transform back
-                    cleaned_window = self.pca_.inverse_transform(cleaned_pca_window)
-                    cleaned_window_reshaped = cleaned_window.reshape(artifact_window.shape)
-                    
-                    # Put back into final data
-                    if self._features_axis in [-1, 2]:
-                        final_cleaned_data[trial_idx, channel_idx, start:end] = cleaned_window_reshaped
-                    else:
-                        final_cleaned_data[trial_idx, start:end, channel_idx] = cleaned_window_reshaped
-            
-            return final_cleaned_data
+                epoch_2d = data[trial_idx, :, start:end]  # (channels, epoch_len)
+                trial_artifact_epochs.append(epoch_2d)
+
+            if not trial_artifact_epochs:
+                continue
+
+            concatenated_epochs = np.hstack(trial_artifact_epochs)  # (channels, total_len)
+            transform_data = concatenated_epochs[np.newaxis, ...]  # (1, channels, total_len)
+
+            data_moved = np.moveaxis(transform_data, self._features_axis, -1)
+            output_shape = data_moved.shape
+            reshaped_data = data_moved.reshape(-1, output_shape[-1])
+
+            pca_data = self.pca_.transform(reshaped_data)
+            cleaned_pca_data = pca_data.copy()
+            if self.noise_components_:
+                cleaned_pca_data[:, self.noise_components_] = 0
+            cleaned_reshaped_data = self.pca_.inverse_transform(cleaned_pca_data)
+
+            cleaned_concatenated_epochs = cleaned_reshaped_data.reshape(output_shape)
+            cleaned_concatenated_epochs = np.moveaxis(cleaned_concatenated_epochs, -1, self._features_axis)
+            cleaned_concatenated_epochs = np.squeeze(cleaned_concatenated_epochs)
+
+            current_pos_in_concat = 0
+            for _, start, end in trial_windows:
+                epoch_len = end - start
+                cleaned_segment = cleaned_concatenated_epochs[:, current_pos_in_concat: current_pos_in_concat + epoch_len]
+                final_cleaned_data[trial_idx, :, start:end] = cleaned_segment
+                current_pos_in_concat += epoch_len
+
+        return final_cleaned_data
 
     def get_explained_variance_ratio(self) -> np.ndarray:
         """Get explained variance ratio for each component."""
@@ -253,19 +344,19 @@ class PCA(BaseSACMethod):
         if not self.is_fitted:
             raise ValueError("Method must be fitted first.")
         
+        if self.mode == 'targeted':
+            print("Warning: plot_components is not supported in targeted mode. Skipping.")
+            return
+        
         if data.ndim != 3:
             raise ValueError("Data must be 3D (trials, channels, timesteps)")
         
         trial_data = data[trial_idx, channel_idx, :]
         
-        if self.mode == 'global':
-            data_moved = np.moveaxis(data[trial_idx:trial_idx+1], self._features_axis, -1)
-            output_shape = data_moved.shape
-            reshaped_data = data_moved.reshape(-1, output_shape[-1])
-        else:
-            data_moved = np.moveaxis(data[trial_idx:trial_idx+1], self._features_axis, -1)
-            output_shape = data_moved.shape
-            reshaped_data = data_moved.reshape(-1, output_shape[-1])
+        filtered_data = self._apply_filter(data[trial_idx:trial_idx+1])
+        data_moved = np.moveaxis(filtered_data, self._features_axis, -1)
+        output_shape = data_moved.shape
+        reshaped_data = data_moved.reshape(-1, output_shape[-1])
         
         pca_data = self.pca_.transform(reshaped_data)
         
@@ -320,6 +411,61 @@ class PCA(BaseSACMethod):
         
         if self.noise_components_:
             axes[1, 1].legend()
+        
+        plt.tight_layout()
+        
+        if save_path:
+            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        plt.show()
+
+    def plot_concatenated_artifact_signal(self, data: np.ndarray, artifact_markers, 
+                                         trial_idx: int = 0, channel_idx: int = 0,
+                                         title: str = "Concatenated Artifact Signal", 
+                                         save_path: Optional[str] = None):
+        """Plot the concatenated artifact signal used for PCA fitting in targeted mode."""
+        if self.mode != 'targeted':
+            print("This method only works in targeted mode.")
+            return
+        
+        artifact_signal = self._extract_artifact_signal(data, artifact_markers)
+        
+        if artifact_signal.shape[0] <= trial_idx or artifact_signal.shape[1] <= channel_idx:
+            print(f"Invalid trial_idx={trial_idx} or channel_idx={channel_idx}. "
+                  f"Available: {artifact_signal.shape[0]} trials, {artifact_signal.shape[1]} channels")
+            return
+        
+        signal = artifact_signal[trial_idx, channel_idx, :]
+        
+        fig, axes = plt.subplots(2, 1, figsize=(15, 8))
+        fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
+        
+        # Plot concatenated signal
+        time_axis = np.arange(len(signal)) / self.sampling_rate
+        axes[0].plot(time_axis, signal)
+        axes[0].set_title('Concatenated Artifact Signal')
+        axes[0].set_xlabel('Time (s)')
+        axes[0].set_ylabel('Amplitude')
+        axes[0].grid(True)
+        
+        # Plot original signal with artifact regions highlighted
+        original_signal = data[trial_idx, channel_idx, :]
+        original_time = np.arange(len(original_signal)) / self.sampling_rate
+        
+        axes[1].plot(original_time, original_signal, 'b-', alpha=0.7, label='Original Signal')
+        
+        # Highlight artifact regions
+        if hasattr(self, 'artifact_locations_per_trial_'):
+            trial_windows = self.artifact_locations_per_trial_[trial_idx]
+            for ch_idx, start, end in trial_windows:
+                if ch_idx == channel_idx:
+                    axes[1].axvspan(start/self.sampling_rate, end/self.sampling_rate, 
+                                   alpha=0.3, color='red', label='Artifact Regions')
+        
+        axes[1].set_title('Original Signal with Artifact Regions Highlighted')
+        axes[1].set_xlabel('Time (s)')
+        axes[1].set_ylabel('Amplitude')
+        axes[1].legend()
+        axes[1].grid(True)
         
         plt.tight_layout()
         

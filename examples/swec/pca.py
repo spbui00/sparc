@@ -20,6 +20,7 @@ def pca():
         artifact_markers = artifact_markers_data
     else:
         artifact_markers = ArtifactTriggers(starts=artifact_markers_data)
+
     data_obj = SignalDataWithGroundTruth(
         raw_data=data_obj['mixed_data'],
         sampling_rate=data_obj['sampling_rate'],
@@ -35,6 +36,9 @@ def pca():
         n_components=4,
         features_axis=1,
         noise_identify_method='variance',
+        mode='global',
+        pre_ms=0.5,
+        post_ms=4.0,
         highpass_cutoff=0.5,
         variance_threshold=0.05
     )
@@ -54,7 +58,7 @@ def pca():
     plotter = NeuralPlotter(NeuralAnalyzer(sampling_rate=data_obj.sampling_rate))
     
     plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 0)
-    pca.plot_components(data_obj.raw_data, trial_idx=0, channel_idx=0)
+    pca.plot_concatenated_artifact_signal(data_obj.raw_data, data_obj.artifact_markers, trial_idx=0, channel_idx=0)
 
 
 if __name__ == "__main__":

@@ -31,11 +31,12 @@ def pca():
     print(f"Sampling rate: {data_obj.sampling_rate} Hz")
     
     pca = PCA(
-        n_components=4,
+        n_components=32,
         features_axis=1,
         noise_identify_method='variance',
+        mode='global',
         highpass_cutoff=1.0,
-        variance_threshold=0.05
+        variance_threshold=0.03
     )
     
     pca.set_sampling_rate(data_obj.sampling_rate)
@@ -45,11 +46,6 @@ def pca():
     
     print("Transforming data...")
     cleaned_data = pca.transform(data_obj.raw_data)
-    
-    # Print results
-    print(f"Explained variance ratios: {pca.get_explained_variance_ratio()}")
-    print(f"Noise components: {pca.get_noise_components()}")
-    print(f"Reconstruction error: {pca.get_reconstruction_error(data_obj.raw_data):.6f}")
     
     # Plot results
     analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
@@ -94,33 +90,26 @@ def multiple_pcas():
     print(f"Data shape: {data_obj.raw_data.shape}")
     
     # Test different PCA configurations
-    noise_methods = ['explained_variance_ratio', 'variance']
-    modes = ['global', 'targeted']
-    components = [2, 4, 8, 16]
-    pre_ms_values = [1.0, 2.0, 3.0, 4.0]
-    post_ms_values = [1.0, 2.0, 3.0, 4.0]
-    highpass_cutoffs = [None, 0.1, 1.0]
+    noise_methods = ['variance']
+    modes = ['global']
+    components = [28, 32, 36, 40]
+    highpass_cutoffs = [0.5, 1.0, 2.0]
     
     methods = {}
     for noise_method in noise_methods:
         for mode in modes:
             for cp in components:
-                for pr in pre_ms_values:
-                    for po in post_ms_values:
-                        for hpc in highpass_cutoffs:
-                            hpc_str = "no_filter" if hpc is None else str(hpc)
-                            method_name = f"pca_{noise_method}_{mode}_{cp}_{pr}_{po}_{hpc_str}"
-                            
-                            methods[method_name] = PCA(
-                                n_components=cp,
-                                features_axis=1,
-                                noise_identify_method=noise_method,
-                                mode=mode,
-                                pre_ms=pr,
-                                post_ms=po,
-                                highpass_cutoff=hpc,
-                                variance_threshold=0.05
-                            )
+                for hpc in highpass_cutoffs:
+                    hpc_str = "no_filter" if hpc is None else str(hpc)
+                    method_name = f"pca_{noise_method}_{mode}_{cp}_{hpc_str}"
+                    
+                    methods[method_name] = PCA(
+                        n_components=cp,
+                        features_axis=1,
+                        noise_identify_method=noise_method,
+                        mode=mode,
+                        highpass_cutoff=hpc,
+                    )
     
     # Test methods
     tester = MethodTester(
@@ -136,4 +125,4 @@ def multiple_pcas():
 
 
 if __name__ == "__main__":
-    pca()
+    multiple_pcas()

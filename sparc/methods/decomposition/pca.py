@@ -10,14 +10,13 @@ class PCA(BaseSACMethod):
     def __init__(self, 
         n_components: int = 2, 
         features_axis: Optional[int] = -1, 
-        noise_identify_method: Literal['variance', 'explained_variance_ratio', 'manual']='explained_variance_ratio',
+        noise_identify_method: Literal['variance', 'manual']='variance',
         mode: Literal['global', 'targeted']='global',
         pre_ms: float = 5.0,
         post_ms: float = 25,
         highpass_cutoff: Optional[float] = None,
         filter_order: int = 4,
         noise_components: Optional[List[int]] = None,
-        variance_threshold: float = 0.01,
         **kwargs):
         super().__init__(**kwargs)
         self._features_axis = features_axis
@@ -31,7 +30,6 @@ class PCA(BaseSACMethod):
         self.highpass_cutoff = highpass_cutoff
         self.filter_order = filter_order
         self.noise_components = noise_components
-        self.variance_threshold = variance_threshold
         self.b_ = None
         self.a_ = None
         if self.sampling_rate is not None:
@@ -119,13 +117,6 @@ class PCA(BaseSACMethod):
             sorted_indices = np.argsort(explained_variance_ratio)[::-1]
             n_noise = min(self.n_components // 2, len(explained_variance_ratio) - 1)
             return sorted_indices[:n_noise].tolist()
-        
-        elif self.noise_identify_method == 'explained_variance_ratio':
-            noise_components = []
-            for i, ratio in enumerate(explained_variance_ratio):
-                if ratio < self.variance_threshold:
-                    noise_components.append(i)
-            return noise_components
         
         else:
             raise ValueError(f"Unknown noise_identify_method: {self.noise_identify_method}")
@@ -327,18 +318,6 @@ class PCA(BaseSACMethod):
 
         return final_cleaned_data
 
-    def get_explained_variance_ratio(self) -> np.ndarray:
-        """Get explained variance ratio for each component."""
-        if not self.is_fitted:
-            raise ValueError("Method must be fitted first.")
-        return self.pca_.explained_variance_ratio_
-
-    def get_noise_components(self) -> List[int]:
-        """Get indices of components identified as noise."""
-        if not self.is_fitted:
-            raise ValueError("Method must be fitted first.")
-        return self.noise_components_
-
     def plot_components(self, data: np.ndarray, trial_idx: int = 0, channel_idx: int = 0, 
                        title: str = "PCA Components Analysis", save_path: Optional[str] = None):
         if not self.is_fitted:
@@ -395,89 +374,8 @@ class PCA(BaseSACMethod):
                 axes[row, col].set_ylabel('Amplitude')
                 axes[row, col].grid(True)
         
-        # Explained variance ratio
-        axes[1, 1].bar(range(len(self.pca_.explained_variance_ratio_)), 
-                      self.pca_.explained_variance_ratio_)
-        axes[1, 1].set_title('Explained Variance Ratio')
-        axes[1, 1].set_xlabel('Component')
-        axes[1, 1].set_ylabel('Explained Variance Ratio')
-        axes[1, 1].grid(True)
-        
-        # Highlight noise components
-        for i, comp_idx in enumerate(self.noise_components_):
-            if comp_idx < len(self.pca_.explained_variance_ratio_):
-                axes[1, 1].bar(comp_idx, self.pca_.explained_variance_ratio_[comp_idx], 
-                              color='red', alpha=0.7, label='Noise' if i == 0 else "")
-        
-        if self.noise_components_:
-            axes[1, 1].legend()
-        
         plt.tight_layout()
         
         if save_path:
             plt.savefig(save_path, dpi=300, bbox_inches='tight')
         plt.show()
-
-    def plot_concatenated_artifact_signal(self, data: np.ndarray, artifact_markers, 
-                                         trial_idx: int = 0, channel_idx: int = 0,
-                                         title: str = "Concatenated Artifact Signal", 
-                                         save_path: Optional[str] = None):
-        """Plot the concatenated artifact signal used for PCA fitting in targeted mode."""
-        if self.mode != 'targeted':
-            print("This method only works in targeted mode.")
-            return
-        
-        artifact_signal = self._extract_artifact_signal(data, artifact_markers)
-        
-        if artifact_signal.shape[0] <= trial_idx or artifact_signal.shape[1] <= channel_idx:
-            print(f"Invalid trial_idx={trial_idx} or channel_idx={channel_idx}. "
-                  f"Available: {artifact_signal.shape[0]} trials, {artifact_signal.shape[1]} channels")
-            return
-        
-        signal = artifact_signal[trial_idx, channel_idx, :]
-        
-        fig, axes = plt.subplots(2, 1, figsize=(15, 8))
-        fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
-        
-        # Plot concatenated signal
-        time_axis = np.arange(len(signal)) / self.sampling_rate
-        axes[0].plot(time_axis, signal)
-        axes[0].set_title('Concatenated Artifact Signal')
-        axes[0].set_xlabel('Time (s)')
-        axes[0].set_ylabel('Amplitude')
-        axes[0].grid(True)
-        
-        # Plot original signal with artifact regions highlighted
-        original_signal = data[trial_idx, channel_idx, :]
-        original_time = np.arange(len(original_signal)) / self.sampling_rate
-        
-        axes[1].plot(original_time, original_signal, 'b-', alpha=0.7, label='Original Signal')
-        
-        # Highlight artifact regions
-        if hasattr(self, 'artifact_locations_per_trial_'):
-            trial_windows = self.artifact_locations_per_trial_[trial_idx]
-            for ch_idx, start, end in trial_windows:
-                if ch_idx == channel_idx:
-                    axes[1].axvspan(start/self.sampling_rate, end/self.sampling_rate, 
-                                   alpha=0.3, color='red', label='Artifact Regions')
-        
-        axes[1].set_title('Original Signal with Artifact Regions Highlighted')
-        axes[1].set_xlabel('Time (s)')
-        axes[1].set_ylabel('Amplitude')
-        axes[1].legend()
-        axes[1].grid(True)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-        plt.show()
-
-    def get_reconstruction_error(self, data: np.ndarray) -> float:
-        """Calculate reconstruction error after noise removal."""
-        if not self.is_fitted:
-            raise ValueError("Method must be fitted first.")
-        
-        cleaned_data = self.transform(data)
-        mse = np.mean((data - cleaned_data) ** 2)
-        return mse

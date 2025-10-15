@@ -42,23 +42,27 @@ def pca():
         highpass_cutoff=0.5,
         variance_threshold=0.05
     )
+
+    tester = MethodTester(
+        data=data_obj,
+        methods={'pca': pca},
+    )
+    tester.run()
+    tester.print_results()
+    tester.plot_results()
+    tester.compare()
     
-    pca.set_sampling_rate(data_obj.sampling_rate)
+    # pca.set_sampling_rate(data_obj.sampling_rate)
     
-    print("Fitting PCA...")
-    pca.fit(data_obj.raw_data, data_obj.artifact_markers)
+    # print("Fitting PCA...")
+    # pca.fit(data_obj.raw_data, data_obj.artifact_markers)
     
-    print("Transforming data...")
-    cleaned_data = pca.transform(data_obj.raw_data)
+    # print("Transforming data...")
+    # cleaned_data = pca.transform(data_obj.raw_data)
     
-    print(f"Explained variance ratios: {pca.get_explained_variance_ratio()}")
-    print(f"Noise components: {pca.get_noise_components()}")
-    print(f"Reconstruction error: {pca.get_reconstruction_error(data_obj.raw_data):.6f}")
+    # plotter = NeuralPlotter(NeuralAnalyzer(sampling_rate=data_obj.sampling_rate))
     
-    plotter = NeuralPlotter(NeuralAnalyzer(sampling_rate=data_obj.sampling_rate))
-    
-    plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 0)
-    pca.plot_concatenated_artifact_signal(data_obj.raw_data, data_obj.artifact_markers, trial_idx=0, channel_idx=0)
+    # plotter.plot_cleaned_comparison(data_obj.ground_truth, data_obj.raw_data, cleaned_data, 0, 0)
 
 
 if __name__ == "__main__":

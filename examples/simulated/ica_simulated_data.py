@@ -26,34 +26,47 @@ def ica():
     print(data.shape)
     analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
     plotter = NeuralPlotter(analyzer)
-    plotter.plot_all_channels_trial(data_obj.raw_data, 0)
+    # plotter.plot_all_channels_trial(data_obj.raw_data, 0)
 
     ica = ICA(
         n_components=2,
         features_axis=1, 
-        artifact_identify_method='kurtosis_min',
-        mode='targeted',
+        artifact_identify_method='kurtosis_max',
+        mode='global',
         pre_ms=2.0,
         post_ms=4.0,
+        highpass_cutoff=0.05,
     )
-    ica.set_sampling_rate(data_obj.sampling_rate)
-    ica.fit(data, artifact_markers=data_obj.artifact_markers)
+
+    tester = MethodTester(
+        data=data_obj,
+        methods={'ica': ica},
+    )
+    tester.run()
     ica.plot_components()
-    cleaned_data = ica.transform(data)
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        1
-    )
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        20
-    )
+    tester.print_results()
+    tester.plot_results()
+    tester.compare()
+
+
+    # ica.set_sampling_rate(data_obj.sampling_rate)
+    # ica.fit(data, artifact_markers=data_obj.artifact_markers)
+    # ica.plot_components()
+    # cleaned_data = ica.transform(data)
+    # plotter.plot_cleaned_comparison(
+    #     data_obj.ground_truth,
+    #     data_obj.raw_data,
+    #     cleaned_data,
+    #     0,
+    #     1
+    # )
+    # plotter.plot_cleaned_comparison(
+    #     data_obj.ground_truth,
+    #     data_obj.raw_data,
+    #     cleaned_data,
+    #     0,
+    #     20
+    # )
 
 def multiple_icas():
     data_handler = DataHandler()

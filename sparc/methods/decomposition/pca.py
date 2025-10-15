@@ -131,59 +131,6 @@ class PCA(BaseSACMethod):
         original_shape = data_moved.shape
         return data_moved.reshape(-1, original_shape[-1])
 
-    def _extract_artifact_signal(self, data: np.ndarray, artifact_markers) -> np.ndarray:
-        num_samples = data.shape[-1]
-        windows_per_trial = self._build_artifact_windows(artifact_markers, num_samples)
-        self.artifact_locations_per_trial_ = windows_per_trial
-
-        n_trials = data.shape[0]
-        channel_axis = self._features_axis if self._features_axis is not None else 1
-        time_axis = 2 if channel_axis == 1 else 1
-        n_channels = data.shape[channel_axis]
-
-        concatenated_signal = [[] for _ in range(n_trials)]
-
-        for trial_idx, trial_windows in enumerate(windows_per_trial):
-            trial_segments = {ch: [] for ch in range(n_channels)}
-
-            for channel_idx, start, end in trial_windows:
-                if end <= start:
-                    continue
-                if time_axis == 2:
-                    segment = data[trial_idx, channel_idx, start:end]
-                else:
-                    segment = data[trial_idx, start:end, channel_idx]
-                trial_segments[channel_idx].append(segment)
-
-            trial_concat = []
-            for ch in range(n_channels):
-                if trial_segments[ch]:
-                    trial_concat.append(np.concatenate(trial_segments[ch]))
-                else:
-                    trial_concat.append(np.array([]))
-
-            concatenated_signal[trial_idx] = trial_concat
-
-        non_empty_trials = [
-            [seg for seg in trial if len(seg) > 0] for trial in concatenated_signal
-            if any(len(seg) > 0 for seg in trial)
-        ]
-        if not non_empty_trials:
-            return np.zeros((n_trials, n_channels, 0))
-
-        max_length = max(max(len(seg) for seg in trial) for trial in non_empty_trials)
-
-        artifact_signal = np.zeros((n_trials, n_channels, max_length))
-        for trial_idx, trial in enumerate(concatenated_signal):
-            for ch_idx, seg in enumerate(trial):
-                if len(seg) > 0:
-                    artifact_signal[trial_idx, ch_idx, :len(seg)] = seg
-
-        if time_axis == 2:
-            return artifact_signal
-        else:
-            return np.transpose(artifact_signal, (0, 2, 1))
-
     def fit(self, data: np.ndarray, artifact_markers: Optional[np.ndarray] = None, **kwargs) -> 'PCA':
         data_to_fit = self._apply_filter(data)
 

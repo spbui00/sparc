@@ -27,7 +27,7 @@ class ICA(BaseSACMethod):
         self.artifact_identify_method = artifact_identify_method
         self.mode = mode
         self.pre_ms = pre_ms
-        self.post_ms = post_ms
+        self.post_ms = post_ms  
         self.highpass_cutoff = highpass_cutoff
         self.filter_order = filter_order
         self.b_ = None

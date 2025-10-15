@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy import signal, stats
 from scipy.fft import fft, fftfreq
 import pywt
@@ -17,7 +16,6 @@ class NeuralAnalyzer:
         trace = data[trial_idx, channel_idx, :]
         n_samples = trace.shape[0]
         
-        # Compute FFT
         yf = fft(trace)
         xf = fftfreq(n_samples, 1 / self.sampling_rate)
         

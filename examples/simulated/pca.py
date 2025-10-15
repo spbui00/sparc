@@ -35,37 +35,45 @@ def pca():
         features_axis=1,
         noise_identify_method='variance',
         mode='global',
-        highpass_cutoff=1.0,
-        variance_threshold=0.03
+        highpass_cutoff=2.0,
     )
-    
-    pca.set_sampling_rate(data_obj.sampling_rate)
-    
-    print("Fitting PCA...")
-    pca.fit(data_obj.raw_data, data_obj.artifact_markers)
-    
-    print("Transforming data...")
-    cleaned_data = pca.transform(data_obj.raw_data)
+
+    tester = MethodTester(
+        data=data_obj,
+        methods={'pca': pca},
+    )
+    tester.run()
+    tester.print_results()
+    tester.plot_results()
+    tester.compare()
     
     # Plot results
-    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
-    plotter = NeuralPlotter(analyzer)
+    # analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
+    # plotter = NeuralPlotter(analyzer)
+
+    # plotter.plot_cleaned_comparison(
+    #     data_obj.ground_truth,
+    #     data_obj.raw_data,
+    #     cleaned_data,
+    #     0,
+    #     0
+    # )
     
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        1
-    )
+    # plotter.plot_cleaned_comparison(
+    #     data_obj.ground_truth,
+    #     data_obj.raw_data,
+    #     cleaned_data,
+    #     0,
+    #     1
+    # )
     
-    plotter.plot_cleaned_comparison(
-        data_obj.ground_truth,
-        data_obj.raw_data,
-        cleaned_data,
-        0,
-        20
-    )
+    # plotter.plot_cleaned_comparison(
+    #     data_obj.ground_truth,
+    #     data_obj.raw_data,
+    #     cleaned_data,
+    #     0,
+    #     20
+    # )
     
     pca.plot_components(data_obj.raw_data, trial_idx=0, channel_idx=1)
 
@@ -125,4 +133,4 @@ def multiple_pcas():
 
 
 if __name__ == "__main__":
-    multiple_pcas()
+    pca()

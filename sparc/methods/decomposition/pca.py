@@ -114,9 +114,8 @@ class PCA(BaseSACMethod):
             return self.noise_components
         
         elif self.noise_identify_method == 'variance':
-            sorted_indices = np.argsort(explained_variance_ratio)[::-1]
             n_noise = min(self.n_components // 2, len(explained_variance_ratio) - 1)
-            return sorted_indices[:n_noise].tolist()
+            return list(range(n_noise))
         
         else:
             raise ValueError(f"Unknown noise_identify_method: {self.noise_identify_method}")
@@ -160,23 +159,24 @@ class PCA(BaseSACMethod):
 
             concatenated_epochs = np.hstack(all_artifact_epochs)  # (channels, total_len)
             fit_data = concatenated_epochs[np.newaxis, ...]  # (1, channels, total_len)
+
+            data_moved = np.moveaxis(fit_data, self._features_axis, -1)
+            num_features = data_moved.shape[-1]
+            X = data_moved.reshape(-1, num_features)
+
+            n_components = self.n_components if self.n_components is not None else num_features
+            if n_components > num_features:
+                raise ValueError(f"n_components ({n_components}) cannot be greater than the number of features ({num_features}).")
+
+            self.pca_ = SklearnPCA(n_components=n_components)
+            self.pca_.fit(X)
+            
+            self.noise_components_ = self._identify_noise_components(
+                self.pca_.explained_variance_ratio_
+            )
         else:
-            fit_data = data_to_fit
-
-        data_moved = np.moveaxis(fit_data, self._features_axis, -1)
-        num_features = data_moved.shape[-1]
-        X = data_moved.reshape(-1, num_features)
-
-        n_components = self.n_components if self.n_components is not None else num_features
-        if n_components > num_features:
-            raise ValueError(f"n_components ({n_components}) cannot be greater than the number of features ({num_features}).")
-
-        self.pca_ = SklearnPCA(n_components=n_components)
-        self.pca_.fit(X)
-        
-        self.noise_components_ = self._identify_noise_components(
-            self.pca_.explained_variance_ratio_
-        )
+            self.pca_ = None
+            self.noise_components_ = None
         
         self.is_fitted = True
         return self
@@ -188,19 +188,43 @@ class PCA(BaseSACMethod):
         data_to_transform = self._apply_filter(data)
 
         if self.mode == 'global':
-            reshaped_data = self._reshape_for_pca(data_to_transform)
-            
-            cleaned_reshaped_data = self._apply_pca_transform(reshaped_data)
-            
-            data_moved = np.moveaxis(data_to_transform, self._features_axis, -1)
-            output_shape = data_moved.shape
-            cleaned_data_moved = cleaned_reshaped_data.reshape(output_shape)
-            cleaned_data = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
-            
-            return cleaned_data
-        
+            return self._process_trial_by_trial(data_to_transform)
         else: 
             return self._process_targeted_windows(data_to_transform)
+
+    def _process_trial_by_trial(self, data: np.ndarray) -> np.ndarray:
+        n_trials = data.shape[0]
+        cleaned_data = np.zeros_like(data)
+        
+        for trial_idx in range(n_trials):
+            trial_data = data[trial_idx:trial_idx+1]
+            
+            data_moved = np.moveaxis(trial_data, self._features_axis, -1)
+            num_features = data_moved.shape[-1]
+            X = data_moved.reshape(-1, num_features)
+            
+            n_components = self.n_components if self.n_components is not None else num_features
+            if n_components > num_features:
+                n_components = num_features
+            
+            trial_pca = SklearnPCA(n_components=n_components)
+            trial_pca.fit(X)
+            
+            noise_components = self._identify_noise_components(
+                trial_pca.explained_variance_ratio_
+            )
+            
+            pca_data = trial_pca.transform(X)
+            cleaned_pca_data = pca_data.copy()
+            if noise_components:
+                cleaned_pca_data[:, noise_components] = 0
+            cleaned_X = trial_pca.inverse_transform(cleaned_pca_data)
+            
+            cleaned_data_moved = cleaned_X.reshape(data_moved.shape)
+            cleaned_trial = np.moveaxis(cleaned_data_moved, -1, self._features_axis)
+            cleaned_data[trial_idx] = cleaned_trial[0]
+        
+        return cleaned_data
 
     def _apply_pca_transform(self, data: np.ndarray) -> np.ndarray:
         pca_data = self.pca_.transform(data)
@@ -284,7 +308,22 @@ class PCA(BaseSACMethod):
         output_shape = data_moved.shape
         reshaped_data = data_moved.reshape(-1, output_shape[-1])
         
-        pca_data = self.pca_.transform(reshaped_data)
+        if self.mode == 'global':
+            num_features = reshaped_data.shape[-1]
+            n_components = self.n_components if self.n_components is not None else num_features
+            if n_components > num_features:
+                n_components = num_features
+            trial_pca = SklearnPCA(n_components=n_components)
+            trial_pca.fit(reshaped_data)
+            pca_data = trial_pca.transform(reshaped_data)
+            explained_variance = trial_pca.explained_variance_ratio_
+            pca_model = trial_pca
+        else:
+            if self.pca_ is None:
+                raise ValueError("PCA model not available for plotting.")
+            pca_data = self.pca_.transform(reshaped_data)
+            explained_variance = self.pca_.explained_variance_ratio_
+            pca_model = self.pca_
         
         fig, axes = plt.subplots(2, 2, figsize=(15, 10))
         fig.suptitle(f"{title} - Trial {trial_idx}, Channel {channel_idx}")
@@ -306,7 +345,7 @@ class PCA(BaseSACMethod):
                 component_pca_data[:, i] = pca_data[:, i]
                 
                 # Transform back to original space
-                component_reshaped = self.pca_.inverse_transform(component_pca_data)
+                component_reshaped = pca_model.inverse_transform(component_pca_data)
                 
                 # Reshape back to original data shape
                 component_data_moved = component_reshaped.reshape(output_shape)
@@ -316,7 +355,7 @@ class PCA(BaseSACMethod):
                 component_signal = component_data[0, channel_idx, :]
                 
                 axes[row, col].plot(time_axis, component_signal)
-                axes[row, col].set_title(f'Component {i+1} (Var: {self.pca_.explained_variance_ratio_[i]:.3f})')
+                axes[row, col].set_title(f'Component {i+1} (Var: {explained_variance[i]:.3f})')
                 axes[row, col].set_xlabel('Time (s)')
                 axes[row, col].set_ylabel('Amplitude')
                 axes[row, col].grid(True)

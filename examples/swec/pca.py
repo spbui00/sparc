@@ -39,8 +39,6 @@ def pca():
         mode='global',
         pre_ms=0.5,
         post_ms=4.0,
-        highpass_cutoff=0.5,
-        variance_threshold=0.05
     )
 
     tester = MethodTester(

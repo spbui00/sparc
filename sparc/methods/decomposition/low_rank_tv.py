@@ -105,7 +105,7 @@ class LowRankTV(BaseSACMethod):
         for it in range(1, self.max_iters + 1):
             Z_L = X_tc - S - U
             # L = _svt(Z_L, inv_rho
-            L = _svt(Z_L.T, inv_rho).T
+            L = _svt(Z_L.T, inv_rho).T # calculate the smoothness in the frequency domain
             Z_S = X_tc - L - U
             S = _tv1d_rows(Z_S, self.lambda_tv * inv_rho)
             R = L + S - X_tc

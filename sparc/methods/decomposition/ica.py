@@ -72,7 +72,6 @@ class ICA(BaseSACMethod):
 
         for trial_starts in starts_per_trial:
             trial_windows: List[Tuple[int, int, int]] = []
-
             for channel_idx, channel_starts in enumerate(trial_starts):
                 if channel_starts is None:
                     continue

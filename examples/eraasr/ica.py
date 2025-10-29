@@ -91,6 +91,50 @@ def multiple_icas():
     tester.plot_results()
     tester.compare()
 
+def ica_one_trial_one_channel():
+    data_handler = DataHandler()
+    data_obj = data_handler.load_npz_data('../../data/eraasr_1000.npz')
+    pre_artifact_train_samples = 200
+    post_artifact_train_samples = 500
+    
+    orig_data = data_obj['arr_0'] # (trials, channels, samples)
+    artifact_markers = ArtifactTriggers(
+        starts=[[np.array([pre_artifact_train_samples])]]
+    )
+
+    orig_data = orig_data[0, 0:4, :][np.newaxis, :, :]
+    # Only use first channel's artifact markers to avoid IndexError
+    artifact_markers_starts_ch0 = artifact_markers.starts[0][0]
+    artifact_markers = ArtifactTriggers(
+        starts=[[np.array(artifact_markers_starts_ch0)]]
+    )
+    
+    data_obj = SignalData(
+        raw_data=orig_data,
+        sampling_rate=1000,
+        artifact_markers=artifact_markers
+    )
+    data = data_obj.raw_data
+    print(data.shape)
+    
+    analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
+    plotter = NeuralPlotter(analyzer)
+    plotter.plot_trace_comparison(data, data, 0, 0, "Just artifact part")
+    ica = ICA(
+        n_components=3,
+        features_axis=1,
+        artifact_identify_method='kurtosis_max',
+        mode='targeted',
+        pre_ms=0,
+        post_ms=(post_artifact_train_samples - pre_artifact_train_samples) * 1000 / data_obj.sampling_rate,
+    )
+    ica.set_sampling_rate(data_obj.sampling_rate)
+    ica.fit(data, artifact_markers=data_obj.artifact_markers)
+    ica.plot_components()
+    cleaned_data = ica.transform(data)
+    plotter.plot_trace_comparison(cleaned_data, data, 0, 0)
+
 
 if __name__ == "__main__":
-    ica()
+    # ica()
+    ica_one_trial_one_channel()

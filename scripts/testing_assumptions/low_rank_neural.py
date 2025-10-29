@@ -27,9 +27,9 @@ def analyze_rank(matrix, dimension, dimension_name, dataset_name, window_info):
     print(f"[{dataset_name} @ {window_info}] {dimension_name}: Min rank for 95% variance: {min_rank} (out of {max_rank})")
     
     if is_low_rank: 
-        print(f"[{dataset_name} @ {window_info}] {dimension_name}: Artifacts are LOW rank.")
+        print(f"[{dataset_name} @ {window_info}] {dimension_name}: Neural data are LOW rank.")
     else:
-        print(f"[{dataset_name} @ {window_info}] {dimension_name}: Artifacts are NOT low rank (relative to {dimension_name}).")
+        print(f"[{dataset_name} @ {window_info}] {dimension_name}: Neural data are NOT low rank (relative to {dimension_name}).")
 
 
 def perform_rank_analysis(artifact_windows_3d, dataset_name, window_info):
@@ -83,10 +83,10 @@ if __name__ == "__main__":
                 artifact_markers=ArtifactTriggers(starts=data_obj_dict['artifact_markers']),
             )
                     
-        original_artifact_tensor = data_obj.artifacts
+        original_neural_tensor = data_obj.ground_truth
         fs = data_obj.sampling_rate
             
-        w, c, n_total_in_trial = original_artifact_tensor.shape
+        w, c, n_total_in_trial = original_neural_tensor.shape
         max_time_samples = data_obj.raw_data.shape[-1]
         window_sizes_ms = [10, 100, 200, 500, int(1000 * max_time_samples / fs)] # ms
 
@@ -97,6 +97,6 @@ if __name__ == "__main__":
                 print(f"[{dataset_name}] Window size {window_size_ms}ms is too small.")
                 continue
             
-            truncated_3d_tensor = original_artifact_tensor[:, :, :n_samples_window]
+            truncated_3d_tensor = original_neural_tensor[:, :, :n_samples_window]
             window_info = f"{window_size_ms} ms ({n_samples_window} samples)"
             perform_rank_analysis(truncated_3d_tensor, dataset_name, window_info)

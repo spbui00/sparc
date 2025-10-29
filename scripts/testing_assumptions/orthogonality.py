@@ -1,29 +1,38 @@
 from sparc import DataHandler, NeuralAnalyzer, NeuralPlotter
 from sparc.core.signal_data import SignalDataWithGroundTruth, SimulatedData, ArtifactTriggers
 import numpy as np
+from utils import extract_windows
 
 
-def orthogonality(data_obj, dataset_name):
-    clean_neural = data_obj.ground_truth
-    artifact = data_obj.artifacts
+def orthogonality(neural_windows, artifact_windows, dataset_name):
+    dot_products = []
     
-    clean_flat = np.ravel(clean_neural)
-    artifact_flat = np.ravel(artifact)
+    for i in range(neural_windows.shape[0]):
+        clean_window = neural_windows[i, :]
+        artifact_window = artifact_windows[i, :]
+        
+        # Normalize each window
+        clean_norm = clean_window / np.linalg.norm(clean_window) if np.linalg.norm(clean_window) > 0 else clean_window
+        artifact_norm = artifact_window / np.linalg.norm(artifact_window) if np.linalg.norm(artifact_window) > 0 else artifact_window
+        
+        # Compute dot product
+        dot_product = np.dot(clean_norm, artifact_norm)
+        dot_products.append(dot_product)
     
-    neural_norm = clean_flat / np.linalg.norm(clean_flat)
-    artifact_norm = artifact_flat / np.linalg.norm(artifact_flat)
+    # Compute average dot product across all windows
+    avg_dot_product = np.mean(dot_products)
     
-    dot_product = np.dot(neural_norm, artifact_norm)
+    print(f"[{dataset_name}] Average dot product: {avg_dot_product:.6f}")
+    print(f"[{dataset_name}] Number of windows analyzed: {len(dot_products)}")
     
-    print(f"[{dataset_name}] Dot product: {dot_product:.6f}")
-    if abs(dot_product) < 0.01:
+    if abs(avg_dot_product) < 0.01:
         print(f"[{dataset_name}] Result: Orthogonal")
-    elif abs(dot_product) < 0.1:
+    elif abs(avg_dot_product) < 0.1:
         print(f"[{dataset_name}] Result: Nearly orthogonal")
     else:
         print(f"[{dataset_name}] Result: Not orthogonal")
     
-    return dot_product
+    return avg_dot_product
 
 if __name__ == "__main__":
     data_handler = DataHandler()
@@ -40,8 +49,10 @@ if __name__ == "__main__":
         stim_params=None,
         snr=data_obj['snr'],
     )
-    orthogonality(data_obj, 'simulated data 1000Hz')
-
+    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
+    for window_size in window_sizes:
+        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
+        orthogonality(clean_neural_windows, artifact_windows, f'simulated data 1000Hz (window size {window_size} ms)')
 
     data_obj = data_handler.load_npz_data('../../data/simulated_data_2x64_30000.npz')
     data_obj = SimulatedData(
@@ -56,8 +67,10 @@ if __name__ == "__main__":
         stim_params=None,
         snr=data_obj['snr'],
     )
-    orthogonality(data_obj, 'simulated data 30000Hz')
-
+    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
+    for window_size in window_sizes:
+        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
+        orthogonality(clean_neural_windows, artifact_windows, f'simulated data 30000Hz (window size {window_size} ms)')
 
     data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512.npz')
     artifact_markers_data = data_obj['artifact_markers']
@@ -68,4 +81,21 @@ if __name__ == "__main__":
         artifacts=data_obj['artifacts'],
         artifact_markers=ArtifactTriggers(starts=artifact_markers_data)
     )
-    orthogonality(data_obj, 'swec data')
+    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
+    for window_size in window_sizes:
+        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
+        orthogonality(clean_neural_windows, artifact_windows, f'swec data (window size {window_size} ms)')
+
+    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_seizure_512.npz')
+    artifact_markers_data = data_obj['artifact_markers']
+    data_obj = SignalDataWithGroundTruth(
+        raw_data=data_obj['mixed_data'],
+        sampling_rate=data_obj['sampling_rate'],
+        ground_truth=data_obj['ground_truth'],
+        artifacts=data_obj['artifacts'],
+        artifact_markers=ArtifactTriggers(starts=artifact_markers_data)
+    )
+    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)]
+    for window_size in window_sizes:
+        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
+        orthogonality(clean_neural_windows, artifact_windows, f'swec seizure data (window size {window_size} ms)')

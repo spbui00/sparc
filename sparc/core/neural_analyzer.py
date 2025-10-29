@@ -8,7 +8,67 @@ import warnings
 class NeuralAnalyzer:
     def __init__(self, sampling_rate: float):
         self.sampling_rate = sampling_rate
+
+    def whiten_data(self, data: np.ndarray) -> np.ndarray:
+        if data.ndim != 3:
+            raise ValueError("Input data must be 3D (trials, channels, timesteps).")
+
+        T, C, N = data.shape  # trials, channels, timesteps
+        reshaped = np.transpose(data, (0, 2, 1)).reshape(-1, C)  # (T*N, C)
+        mean = np.mean(reshaped, axis=0, keepdims=True)
+        demeaned = reshaped - mean
+        cov = np.cov(demeaned, rowvar=False)
+        eigvals, eigvecs = np.linalg.eigh(cov)
+        eigvals[eigvals < 1e-12] = 1e-12
+        whitening_matrix = eigvecs @ np.diag(1.0/np.sqrt(eigvals)) @ eigvecs.T
+        whitened = demeaned @ whitening_matrix.T
+        whitened = whitened.reshape(T, N, C).transpose(0, 2, 1)
+        return whitened
+
+    def compute_avg_acf(self, signal_data: np.ndarray, max_lag: int):
+        """Compute the average auto-correlation function of a signal."""
+        return self.compute_avg_ccf(signal_data, signal_data, max_lag)
+
+    def compute_avg_ccf(self, signal_1: np.ndarray, signal_2: np.ndarray, max_lag: int):     
+        """Compute the average cross-correlation function of two signals."""
+        all_ccfs = []
+        lags = np.arange(-max_lag, max_lag+1)
+        T, N = signal_1.shape
+        for tr in range(T):
+            trace_1 = signal_1[tr, :]
+            trace_2 = signal_2[tr, :]
+            trace_1_c = trace_1 - np.mean(trace_1)
+            trace_2_c = trace_2 - np.mean(trace_2)
+            std_1 = np.std(trace_1_c)
+            std_2 = np.std(trace_2_c)
+
+            if std_1 < 1e-10 or std_2 < 1e-10:
+                ccf_trial = np.full(2 * max_lag + 1, np.nan)
+            else:
+                full_corr = signal.correlate(trace_1_c, trace_2_c, mode='full', method='auto')
+                norm_factor = N*std_1*std_2
+                full_corr /= norm_factor
+
+                center_idx = N-1
+                start_idx = max(0, center_idx - max_lag)
+                end_idx = min(len(full_corr), center_idx + max_lag)
+
+                ccf_trial_extracted = full_corr[start_idx:end_idx]
+                ccf_trial = np.full(2 * max_lag + 1, np.nan)
+                actual_start_lag = -(center_idx - start_idx)
+                actual_end_lag = (end_idx - 1) - center_idx
+                target_start_idx = max_lag + actual_start_lag
+                target_end_idx = max_lag + actual_end_lag + 1
+                ccf_trial[target_start_idx:target_end_idx] = ccf_trial_extracted
         
+            all_ccfs.append(ccf_trial)
+
+        if not all_ccfs:
+            return lags, np.zeros_like(lags, dtype=float) 
+
+        avg_ccf = np.nanmean(np.array(all_ccfs), axis=0)
+        return lags, avg_ccf
+
     def compute_fft(self, data: np.ndarray, trial_idx: int, channel_idx: int) -> Tuple[np.ndarray, np.ndarray]:
         if data.ndim != 3:
             raise ValueError("Input data must be 3D (trials, channels, timesteps).")

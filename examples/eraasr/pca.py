@@ -32,14 +32,14 @@ def pca():
     print(f"Sampling rate: {data_obj.sampling_rate} Hz")
     
     pca = PCA(
-        n_components=4,
+        n_components=None,
+        n_components_to_remove=2,
         features_axis=1,
         noise_identify_method='variance',
         mode='global',
         pre_ms=0,
         post_ms=(post_artifact_train_samples - pre_artifact_train_samples) * 1000 / data_obj.sampling_rate,
         highpass_cutoff=1.0,
-        variance_threshold=0.05
     )
     
     pca.set_sampling_rate(data_obj.sampling_rate)

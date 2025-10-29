@@ -37,7 +37,7 @@ def run():
         ),
         
         'pca_variance_global': PCA(
-            n_components=4, features_axis=1, noise_identify_method='variance',
+            n_components=None, n_components_to_remove=2, features_axis=1, noise_identify_method='variance',
             mode='global'
         ),
     }

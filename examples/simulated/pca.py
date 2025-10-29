@@ -31,7 +31,8 @@ def pca():
     print(f"Sampling rate: {data_obj.sampling_rate} Hz")
     
     pca = PCA(
-        n_components=32,
+        n_components=None,
+        n_components_to_remove=16,
         features_axis=1,
         noise_identify_method='variance',
         mode='global',
@@ -100,19 +101,20 @@ def multiple_pcas():
     # Test different PCA configurations
     noise_methods = ['variance']
     modes = ['global']
-    components = [28, 32, 36, 40]
+    components_to_remove = [14, 16, 18, 20]
     highpass_cutoffs = [0.5, 1.0, 2.0]
     
     methods = {}
     for noise_method in noise_methods:
         for mode in modes:
-            for cp in components:
+            for cp_remove in components_to_remove:
                 for hpc in highpass_cutoffs:
                     hpc_str = "no_filter" if hpc is None else str(hpc)
-                    method_name = f"pca_{noise_method}_{mode}_{cp}_{hpc_str}"
+                    method_name = f"pca_{noise_method}_{mode}_{cp_remove}removed_{hpc_str}"
                     
                     methods[method_name] = PCA(
-                        n_components=cp,
+                        n_components=None,
+                        n_components_to_remove=cp_remove,
                         features_axis=1,
                         noise_identify_method=noise_method,
                         mode=mode,

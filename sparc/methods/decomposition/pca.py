@@ -8,7 +8,8 @@ from scipy import signal
 
 class PCA(BaseSACMethod):
     def __init__(self, 
-        n_components: int = 2, 
+        n_components: Optional[int] = None, 
+        n_components_to_remove: int = 1,
         features_axis: Optional[int] = -1, 
         noise_identify_method: Literal['variance', 'manual']='variance',
         mode: Literal['global', 'targeted']='global',
@@ -21,6 +22,7 @@ class PCA(BaseSACMethod):
         super().__init__(**kwargs)
         self._features_axis = features_axis
         self.n_components = n_components
+        self.n_components_to_remove = n_components_to_remove
         self.pca_ = None
         self.noise_components_ = None
         self.noise_identify_method = noise_identify_method
@@ -114,7 +116,7 @@ class PCA(BaseSACMethod):
             return self.noise_components
         
         elif self.noise_identify_method == 'variance':
-            n_noise = min(self.n_components // 2, len(explained_variance_ratio) - 1)
+            n_noise = min(self.n_components_to_remove, len(explained_variance_ratio))
             return list(range(n_noise))
         
         else:
@@ -203,9 +205,9 @@ class PCA(BaseSACMethod):
             num_features = data_moved.shape[-1]
             X = data_moved.reshape(-1, num_features)
             
-            n_components = self.n_components if self.n_components is not None else num_features
-            if n_components > num_features:
-                n_components = num_features
+            max_components = min(X.shape[0], X.shape[1])
+            n_components = self.n_components if self.n_components is not None else max_components
+            n_components = min(n_components, max_components)
             
             trial_pca = SklearnPCA(n_components=n_components)
             trial_pca.fit(X)
@@ -337,7 +339,8 @@ class PCA(BaseSACMethod):
         axes[0, 0].grid(True)
         
         # PCA components
-        for i in range(min(self.n_components, 4)):
+        n_components_available = pca_data.shape[1]
+        for i in range(min(n_components_available, 4)):
             row, col = (i + 1) // 2, (i + 1) % 2
             if row < 2 and col < 2:
                 # Create a matrix with only component i active

@@ -20,6 +20,7 @@ def ica():
         artifacts=data_obj['artifacts'],
         artifact_markers=ArtifactTriggers(starts=artifact_markers_data)
     )
+    max_ms = data_obj.raw_data.shape[2] / data_obj.sampling_rate
     data = data_obj.raw_data
     print(data.shape)
     analyzer = NeuralAnalyzer(sampling_rate=data_obj.sampling_rate)
@@ -32,12 +33,12 @@ def ica():
     # )
 
     ica = ICA(
-        n_components=2,
+        n_components=3,
         features_axis=1,
         artifact_identify_method='kurtosis_min',
-        mode='targeted',
+        mode='global',
         pre_ms=0,
-        post_ms=4.0,
+        post_ms=max_ms,
         highpass_cutoff=0.5,
     )
 

@@ -27,15 +27,33 @@ def analyze_time(neural_windows, artifact_windows, window_info, dataset_name, fs
         print(f"[{dataset_name}] ACF Neural (lag 1 sample): N/A (max_lag too small)")
         print(f"[{dataset_name}] ACF Artifact (lag 1 sample): N/A (max_lag too small)")
     
-    print(f"[{dataset_name}] CCF Neural-Artifact (lag 0): {avg_ccf_na[lag_0_idx]:.4f}")
+    print(f"[{dataset_name}] CCF Neural-Artifact (lag 1): {avg_ccf_na[lag_1_idx]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 2): {avg_ccf_na[max_lag_samples + 2]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 3): {avg_ccf_na[max_lag_samples + 3]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 4): {avg_ccf_na[max_lag_samples + 4]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 5): {avg_ccf_na[max_lag_samples + 5]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 6): {avg_ccf_na[max_lag_samples + 6]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 7): {avg_ccf_na[max_lag_samples + 7]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 8): {avg_ccf_na[max_lag_samples + 8]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 9): {avg_ccf_na[max_lag_samples + 9]:.4f}")
+    # print(f"[{dataset_name}] CCF Neural-Artifact (lag 10): {avg_ccf_na[max_lag_samples + 10]:.4f}")
 
     non_zero_lag_indices = np.where(lags_samples != 0)[0]
     max_abs_ccf_non_zero_lag = np.nan
     if non_zero_lag_indices.size > 0:
          valid_indices = non_zero_lag_indices[ (non_zero_lag_indices >= 0) & (non_zero_lag_indices < len(avg_ccf_na)) ]
          if valid_indices.size > 0:
-              max_abs_ccf_non_zero_lag = np.nanmax(np.abs(avg_ccf_na[valid_indices]))
+              abs_ccf_values = np.abs(avg_ccf_na[valid_indices])
+              max_abs_ccf_non_zero_lag = np.nanmax(abs_ccf_values)
+              min_abs_ccf_non_zero_lag = np.nanmin(abs_ccf_values)
+              max_idx_in_valid = np.nanargmax(abs_ccf_values)
+              min_idx_in_valid = np.nanargmin(abs_ccf_values)
+              max_lag_idx = valid_indices[max_idx_in_valid]
+              min_lag_idx = valid_indices[min_idx_in_valid]
               print(f"[{dataset_name}] Max abs CCF (lags != 0): {max_abs_ccf_non_zero_lag:.4f}")
+              print(f"[{dataset_name}] Min abs CCF (lags != 0): {min_abs_ccf_non_zero_lag:.4f}")
+              print(f"[{dataset_name}] Max abs CCF at lag: {lags_samples[max_lag_idx]} samples ({lags_ms[max_lag_idx]:.2f} ms)")
+              print(f"[{dataset_name}] Min abs CCF at lag: {lags_samples[min_lag_idx]} samples ({lags_ms[min_lag_idx]:.2f} ms)")
          else:
               print(f"[{dataset_name}] Max abs CCF (lags != 0): N/A (no valid non-zero lag indices)")
     else:
@@ -86,8 +104,8 @@ if __name__ == "__main__":
     data_handler = DataHandler()
     
     datasets = [
-        ('../../data/simulated_data_2x64_1000.npz', 'simulated data 1000Hz'),
-        ('../../data/simulated_data_2x64_30000.npz', 'simulated data 30000Hz'),
+        # ('../../data/simulated_data_2x64_1000.npz', 'simulated data 1000Hz'),
+        # ('../../data/simulated_data_2x64_30000.npz', 'simulated data 30000Hz'),
         ('../../data/added_artifacts_swec_data_512.npz', 'swec data 512Hz'),
         ('../../data/added_artifacts_swec_data_seizure_512.npz', 'swec seizure data 512Hz')
     ]

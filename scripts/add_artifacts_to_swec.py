@@ -41,8 +41,6 @@ def resample_signal(data, original_rate, target_rate) -> np.ndarray:
 
 def downsample_artifact_markers(artifact_indices, original_rate, target_rate):
     downsample_ratio = original_rate / target_rate
-    
-    # Simple downsampling of indices
     downsampled_indices = [int(idx / downsample_ratio) for idx in artifact_indices]
     
     return downsampled_indices
@@ -56,7 +54,7 @@ def main():
     print(f"Final data shape: {final_data.shape}")
 
     # Load raw MATLAB data directly to avoid incorrect reshaping
-    artifacts_data = data_handler.load_matlab_data('../research/generate_dataset/SimulatedData.mat')
+    artifacts_data = data_handler.load_matlab_data('../research/generate_dataset/SimulatedData_lower_freq.mat')
     artifacts = np.array(artifacts_data['SimArtifact']) # (samples, channels, arrays)
     print(f"Original artifacts shape: {artifacts.shape}")
     print(f"Artifacts min/max: {artifacts.min():.2f}, {artifacts.max():.2f}")
@@ -74,8 +72,29 @@ def main():
     artifacts_downsampled = resample_signal(artifacts_reshaped, SAMPLING_RATE, SWEC_SAMPLING_RATE)
     print(f"Artifacts downsampled shape: {artifacts_downsampled.shape}")
 
-    first_artifact_start_orig = int(raw_indices.flat[1]) - 1
-    window_orig = 200 # number of samples to plot around the start
+    # plot artifact and their indices before downsampling
+    plt.figure(figsize=(12, 6))
+    # Plot the first channel of the reshaped artifact signal and mark artifact indices
+    channel_idx = 0
+    signal_to_plot = artifacts_reshaped[:, channel_idx]
+    times = np.arange(signal_to_plot.shape[0]) / SWEC_SAMPLING_RATE * 1000  # ms
+
+    plt.plot(times, signal_to_plot, label='Artifacts (trial 0, channel 0)')
+    for idx in artifact_indices:
+        if 0 <= idx < len(times):
+            plt.axvline(x=times[idx], color='r', linestyle='--', alpha=0.5)
+            plt.text(times[idx], signal_to_plot.min(), str(idx), color='red', rotation=90,
+                     verticalalignment='bottom', horizontalalignment='right', fontsize=7, alpha=0.7)
+    plt.xlabel('Time (ms)')
+    plt.ylabel('Amplitude')
+    plt.title('First trial, first channel with artifact indices (indices labeled on time axis)')
+    plt.legend()
+    plt.grid(True, alpha=0.5)
+    plt.tight_layout()
+    plt.show()
+
+    first_artifact_start_orig = int(raw_indices.flat[0]) - 1
+    window_orig = 1000 # number of samples to plot around the start
     pulse_orig = artifacts_reshaped[first_artifact_start_orig:first_artifact_start_orig + window_orig, 0]
     time_orig = np.arange(len(pulse_orig)) / SAMPLING_RATE * 1000 # in ms
 
@@ -129,7 +148,7 @@ def main():
     )
 
     # save to npz 
-    np.savez_compressed(f'../data/added_artifacts_swec_data_{SWEC_SAMPLING_RATE}.npz', 
+    np.savez_compressed(f'../data/added_artifacts_swec_data_{SWEC_SAMPLING_RATE}_lower_freq.npz', 
         mixed_data=mixed.raw_data, 
         ground_truth=mixed.ground_truth, 
         artifacts=mixed.artifacts, 

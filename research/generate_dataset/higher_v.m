@@ -38,7 +38,7 @@ NumFrames = SimulationLength/FrameTime;
 PhospheneThreshold = 100; % This is the arbitrary phosphene threshold of the stimulating electrode, it is used in calculate stimulation induced response
 MaxCurrentLevelMultiplier = 3; % This is the maximal stimulation current level on a channel. It is PhospheneThreshold * MaxCurrentLevelMultiplier
 GreyLevels = 8; % assume we can control the gray level, but here is more relevant in testing artifact removing
-StimParam.Frequency = 200; % pulse frequency Hz
+StimParam.Frequency = 50; % pulse frequency Hz
 StimParam.Period = 1/StimParam.Frequency; % in seconds
 StimParam.timeperphase = 0.17; % ms, same as cerestim definition, this is the time per phase in a single stim pulse
 StimParam.timeinterphase = 0.06; % ms,  same as cerestim definition, this is the time between phases in a single stim pulse
@@ -235,8 +235,7 @@ for StimArray = StimulatedArray % for each stimulating array
                         amplitudeshiftingintime = 0.12;
                         beta0 = [300.0, 0.5];
                         % artifact spatial profile
-                        x1 = Array
-                        Param(thisArray).Xmmcoord(thisElectrode);
+                        x1 = ArrayParam(thisArray).Xmmcoord(thisElectrode);
                         y1 = ArrayParam(thisArray).Ymmcoord(thisElectrode);
                         x2 = ArrayParam(StimArray).Xmmcoord(StimElec);
                         y2 = ArrayParam(StimArray).Ymmcoord(StimElec);
@@ -503,12 +502,12 @@ end
 
 
 SimCombined = SimBB + SimArtifact;
-save('./SimulatedData.mat','AllStimIdx','SimFR','SimSpikeTrain','SimLFP','SimBB','SimArtifact','SimCombined','StimParam','AllSNR')
+save('./SimulatedData_lower_freq.mat','AllStimIdx','SimFR','SimSpikeTrain','SimLFP','SimBB','SimArtifact','SimCombined','StimParam','AllSNR')
 
 % SCRIPT TO PLOT **ONLY THE ARTIFACT**
 clear;
 clc;
-data_file_path = '/Users/bui/code/sparc/research/generate_dataset/SimulatedData.mat';
+data_file_path = '/Users/bui/code/sparc/research/generate_dataset/SimulatedData_lower_freq.mat';
 RawDataSampleRate = 30000;
 
 % --- Compare two different electrodes ---

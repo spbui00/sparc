@@ -4,12 +4,10 @@ Script to analyze hyperparameter sweep results and generate a LaTeX table
 of the top 10 configurations based on SNR, MSE, and Median Spectral Coherence.
 """
 
-import os
 import re
 import glob
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
-import numpy as np
 
 def parse_results_file(results_path: str) -> Optional[Dict[str, float]]:
     """
@@ -24,12 +22,17 @@ def parse_results_file(results_path: str) -> Optional[Dict[str, float]]:
         
         metrics = {}
         
-        # Extract SNR After (Cleaned)
+        # Extract SNR Improvement (required for scoring)
+        snr_imp_match = re.search(r'SNR Improvement: ([\d\.-]+) dB', content)
+        if snr_imp_match:
+            metrics['snr_improvement'] = float(snr_imp_match.group(1))
+        else:
+            return None
+        
+        # Extract SNR After (Cleaned) - kept for display
         snr_match = re.search(r'SNR After \(Cleaned\): ([\d\.-]+) dB', content)
         if snr_match:
             metrics['snr_after'] = float(snr_match.group(1))
-        else:
-            return None
         
         # Extract MSE
         mse_match = re.search(r'MSE: ([\d\.]+)', content)
@@ -44,11 +47,6 @@ def parse_results_file(results_path: str) -> Optional[Dict[str, float]]:
             metrics['median_coherence'] = float(coherence_match.group(1))
         else:
             return None
-        
-        # Extract SNR Improvement (bonus metric)
-        snr_imp_match = re.search(r'SNR Improvement: ([\d\.-]+) dB', content)
-        if snr_imp_match:
-            metrics['snr_improvement'] = float(snr_imp_match.group(1))
         
         # Extract PSD MSE median (bonus metric)
         psd_mse_match = re.search(r'PSD MSE \(median across channels\): ([\d\.]+)', content)
@@ -100,7 +98,7 @@ def parse_config_from_dirname(dirname: str) -> Dict[str, float]:
     
     return config
 
-def compute_composite_score(snr_after: float, mse: float, median_coherence: float, 
+def compute_composite_score(snr_improvement: float, mse: float, median_coherence: float, 
                            snr_range: Tuple[float, float], mse_range: Tuple[float, float], 
                            coherence_range: Tuple[float, float],
                            w_snr: float = 1.0, w_mse: float = 0.3, w_coherence: float = 0.3) -> float:
@@ -109,7 +107,7 @@ def compute_composite_score(snr_after: float, mse: float, median_coherence: floa
     Higher is better.
     
     Normalize each metric using actual ranges from the sweep:
-    - SNR: higher is better
+    - SNR Improvement: higher is better
     - MSE: lower is better (invert: use 1 - normalized_mse)
     - Coherence: higher is better
     
@@ -120,9 +118,9 @@ def compute_composite_score(snr_after: float, mse: float, median_coherence: floa
     mse_min, mse_max = mse_range
     coherence_min, coherence_max = coherence_range
     
-    # Normalize SNR (higher is better)
+    # Normalize SNR Improvement (higher is better)
     if snr_max > snr_min:
-        normalized_snr = (snr_after - snr_min) / (snr_max - snr_min)
+        normalized_snr = (snr_improvement - snr_min) / (snr_max - snr_min)
     else:
         normalized_snr = 0.5  # If all values are the same
     normalized_snr = max(0, min(1, normalized_snr))  # Clamp to [0, 1]
@@ -198,7 +196,7 @@ def analyze_sweep(sweep_dir: str = 'sweep_1', top_n: int = 30,
     print(f"Found {len(results_files)} result files")
     
     # First pass: collect all metrics to compute actual ranges
-    all_snr_values = []
+    all_snr_improvement_values = []
     all_mse_values = []
     all_coherence_values = []
     
@@ -214,7 +212,7 @@ def analyze_sweep(sweep_dir: str = 'sweep_1', top_n: int = 30,
             continue
         
         # Collect values for range computation
-        all_snr_values.append(metrics['snr_after'])
+        all_snr_improvement_values.append(metrics['snr_improvement'])
         all_mse_values.append(metrics['mse'])
         all_coherence_values.append(metrics['median_coherence'])
         
@@ -224,19 +222,19 @@ def analyze_sweep(sweep_dir: str = 'sweep_1', top_n: int = 30,
         all_results.append((config, metrics, None, dirname))  # Score will be computed later
     
     # Compute actual ranges from the data
-    snr_range = (min(all_snr_values), max(all_snr_values)) if all_snr_values else (0, 0)
+    snr_range = (min(all_snr_improvement_values), max(all_snr_improvement_values)) if all_snr_improvement_values else (0, 0)
     mse_range = (min(all_mse_values), max(all_mse_values)) if all_mse_values else (0, 0)
     coherence_range = (min(all_coherence_values), max(all_coherence_values)) if all_coherence_values else (0, 0)
     
     print(f"\nActual metric ranges:")
-    print(f"  SNR: [{snr_range[0]:.2f}, {snr_range[1]:.2f}] dB")
+    print(f"  SNR Improvement: [{snr_range[0]:.2f}, {snr_range[1]:.2f}] dB")
     print(f"  MSE: [{mse_range[0]:.2f}, {mse_range[1]:.2f}]")
     print(f"  Coherence: [{coherence_range[0]:.4f}, {coherence_range[1]:.4f}]")
     
     # Second pass: compute composite scores using actual ranges
     for i, (config, metrics, _, dirname) in enumerate(all_results):
         score = compute_composite_score(
-            metrics['snr_after'],
+            metrics['snr_improvement'],
             metrics['mse'],
             metrics['median_coherence'],
             snr_range,
@@ -269,7 +267,7 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
     latex_lines.append("\\begin{table}[h]")
     latex_lines.append("\\centering")
     num_results = len(top_results)
-    caption = f"Top {num_results} Hyperparameter Configurations Based on Composite Score (weights: SNR={w_snr}, MSE={w_mse}, Coherence={w_coherence})"
+    caption = f"Top {num_results} Hyperparameter Configurations Based on Composite Score (weights: SNR Improvement={w_snr}, MSE={w_mse}, Coherence={w_coherence})"
     latex_lines.append(f"\\caption{{{caption}}}")
     
     # Add sweep ranges as a note
@@ -304,11 +302,11 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
         ranges_text += ", ".join(range_parts) + "."
         latex_lines.append(f"\\footnotesize{{{ranges_text}}}")
     
-    latex_lines.append("\\label{tab:sweep_top30}")
+    latex_lines.append(f"\\label{{tab:sweep_top{num_results}}}")
     latex_lines.append("\\resizebox{\\textwidth}{!}{%")
     latex_lines.append("\\begin{tabular}{cccccc|cccc}")
     latex_lines.append("\\toprule")
-    latex_lines.append("\\textbf{$f_c$ (Hz)} & \\textbf{$w_{\\text{cosine}}$} & \\textbf{$w_{\\text{artifact rank}}$} & \\textbf{$w_{\\text{neural rank}}$} & \\textbf{$w_{\\text{spectral}}$} & \\textbf{$w_{\\text{slope}}$} & \\textbf{SNR} & \\textbf{MSE} & \\textbf{Coherence} & \\textbf{Score} \\\\")
+    latex_lines.append("\\textbf{$f_c$ (Hz)} & \\textbf{$w_{\\text{cosine}}$} & \\textbf{$w_{\\text{artifact rank}}$} & \\textbf{$w_{\\text{neural rank}}$} & \\textbf{$w_{\\text{spectral}}$} & \\textbf{$w_{\\text{slope}}$} & \\textbf{SNR Imp.} & \\textbf{MSE} & \\textbf{Coherence} & \\textbf{Score} \\\\")
     latex_lines.append("\\midrule")
     
     # Table rows
@@ -320,12 +318,12 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
         w_spectral = config.get('w_spectral', 0)
         w_spectral_slope = config.get('w_spectral_slope', 0)
         
-        snr_after = metrics['snr_after']
+        snr_improvement = metrics['snr_improvement']
         mse = metrics['mse']
         median_coherence = metrics['median_coherence']
         
         # Format numbers
-        row = f"{f_cutoff:.0f} & {w_cosine:.2f} & {w_rank_a:.2f} & {w_rank_s:.2f} & {w_spectral:.2f} & {w_spectral_slope:.2f} & {snr_after:.2f} & {mse:.2f} & {median_coherence:.4f} & {score:.4f} \\\\"
+        row = f"{f_cutoff:.0f} & {w_cosine:.2f} & {w_rank_a:.2f} & {w_rank_s:.2f} & {w_spectral:.2f} & {w_spectral_slope:.2f} & {snr_improvement:.2f} & {mse:.2f} & {median_coherence:.4f} & {score:.4f} \\\\"
         latex_lines.append(row)
     
     # Table footer
@@ -353,10 +351,10 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
     print("\n" + "="*80)
     print(f"TOP {len(top_results)} CONFIGURATIONS SUMMARY")
     print("="*80)
-    print(f"{'SNR (dB)':<12} {'MSE':<12} {'Coherence':<12} {'Score':<10}")
+    print(f"{'SNR Imp. (dB)':<15} {'MSE':<12} {'Coherence':<12} {'Score':<10}")
     print("-"*80)
     for config, metrics, score, dirname in top_results:
-        print(f"{metrics['snr_after']:<12.2f} {metrics['mse']:<12.2f} {metrics['median_coherence']:<12.4f} {score:<10.4f}")
+        print(f"{metrics['snr_improvement']:<15.2f} {metrics['mse']:<12.2f} {metrics['median_coherence']:<12.4f} {score:<10.4f}")
     
     return output_file
 
@@ -368,10 +366,10 @@ def main():
                         help='Directory containing sweep results (default: sweep_1)')
     parser.add_argument('--top-n', type=int, default=30,
                         help='Number of top configurations to include (default: 30)')
-    parser.add_argument('--output', type=str, default='sweep_top30_table.tex',
-                        help='Output LaTeX file (default: sweep_top30_table.tex)')
+    parser.add_argument('--output', type=str, default=None,
+                        help='Output LaTeX file (default: sweep_top{top_n}_table.tex based on --top-n)')
     parser.add_argument('--w-snr', type=float, default=1.0,
-                        help='Weight for SNR in composite score (default: 1.0)')
+                        help='Weight for SNR Improvement in composite score (default: 1.0)')
     parser.add_argument('--w-mse', type=float, default=0.3,
                         help='Weight for MSE in composite score (default: 0.3)')
     parser.add_argument('--w-coherence', type=float, default=0.3,
@@ -379,8 +377,12 @@ def main():
     
     args = parser.parse_args()
     
+    # Set default output filename based on top_n if not provided
+    if args.output is None:
+        args.output = f'sweep_top{args.top_n}_table.tex'
+    
     print("Analyzing sweep results...")
-    print(f"Score weights: SNR={args.w_snr}, MSE={args.w_mse}, Coherence={args.w_coherence}")
+    print(f"Score weights: SNR Improvement={args.w_snr}, MSE={args.w_mse}, Coherence={args.w_coherence}")
     top_results, sweep_ranges = analyze_sweep(
         args.sweep_dir, 
         args.top_n,

@@ -309,3 +309,4 @@ sparc.egg-info/
 .env.production.local
 
 sparc-nn/sweeps/sweep_*/
+*.tex

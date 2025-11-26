@@ -209,8 +209,10 @@ class NeuralAnalyzer:
         psd_mse = np.zeros(ground_truth.shape[1])
         
         for ch in range(ground_truth.shape[1]):
-            freqs_gt, psd_gt = self.compute_psd(ground_truth[:, ch], nperseg=nperseg)
-            freqs_rec, psd_rec = self.compute_psd(reconstructed[:, ch], nperseg=nperseg)
+            gt_ch = ground_truth[:, ch, :][:, np.newaxis, :]
+            rec_ch = reconstructed[:, ch, :][:, np.newaxis, :]
+            freqs_gt, psd_gt = self.compute_psd(gt_ch, nperseg=nperseg)
+            freqs_rec, psd_rec = self.compute_psd(rec_ch, nperseg=nperseg)
             psd_mse[ch] = np.mean((psd_gt - psd_rec) ** 2)
             
         return psd_mse
@@ -219,8 +221,9 @@ class NeuralAnalyzer:
         coherence = np.zeros(signal1.shape[1])
         
         for ch in range(signal1.shape[1]):
-            freqs, coh = signal.coherence(signal1[:, ch], signal2[:, ch], 
-                                        fs=self.sampling_rate)
+            s1_ch = np.mean(signal1[:, ch, :], axis=0)
+            s2_ch = np.mean(signal2[:, ch, :], axis=0)
+            freqs, coh = signal.coherence(s1_ch, s2_ch, fs=self.sampling_rate)
             coherence[ch] = np.mean(coh)
             
         return coherence

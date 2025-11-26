@@ -6,7 +6,7 @@ from utils import extract_windows
 
 def orthogonality(neural_windows, artifact_windows, dataset_name):
     dot_products = []
-    
+
     for i in range(neural_windows.shape[0]):
         clean_window = neural_windows[i, :]
         artifact_window = artifact_windows[i, :]
@@ -36,66 +36,45 @@ def orthogonality(neural_windows, artifact_windows, dataset_name):
 
 if __name__ == "__main__":
     data_handler = DataHandler()
-    data_obj = data_handler.load_npz_data('../../data/simulated_data_2x64_1000.npz')
-    data_obj = SimulatedData(
-        raw_data=data_obj['raw_data'],
-        sampling_rate=data_obj['sampling_rate'],
-        ground_truth=data_obj['ground_truth'],
-        artifacts=data_obj['artifacts'],
-        artifact_markers=ArtifactTriggers(starts=data_obj['artifact_markers']),  
-        firing_rate=data_obj['firing_rate'],
-        spike_train=data_obj['spike_train'],
-        lfp=data_obj['lfp'],
-        stim_params=None,
-        snr=data_obj['snr'],
-    )
-    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
-    for window_size in window_sizes:
-        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
-        orthogonality(clean_neural_windows, artifact_windows, f'simulated data 1000Hz (window size {window_size} ms)')
+    
+    datasets = [
+        # ('../../data/simulated_data_2x64_1000.npz', 'simulated data 1000Hz'),
+        # ('../../data/simulated_data_2x64_30000.npz', 'simulated data 30000Hz'),
+        ('../../data/added_artifacts_swec_data_512.npz', 'swec data 512Hz'),
+        ('../../data/added_artifacts_swec_data_seizure_512.npz', 'swec seizure data 512Hz'),
+        ('../../data/added_artifacts_swec_data_seizure_512_lower_freq.npz', 'swec seizure data 512Hz lower freq'),
+    ]
 
-    data_obj = data_handler.load_npz_data('../../data/simulated_data_2x64_30000.npz')
-    data_obj = SimulatedData(
-        raw_data=data_obj['raw_data'],
-        sampling_rate=data_obj['sampling_rate'],
-        ground_truth=data_obj['ground_truth'],
-        artifacts=data_obj['artifacts'],
-        artifact_markers=ArtifactTriggers(starts=data_obj['artifact_markers']),  
-        firing_rate=data_obj['firing_rate'],
-        spike_train=data_obj['spike_train'],
-        lfp=data_obj['lfp'],
-        stim_params=None,
-        snr=data_obj['snr'],
-    )
-    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
-    for window_size in window_sizes:
-        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
-        orthogonality(clean_neural_windows, artifact_windows, f'simulated data 30000Hz (window size {window_size} ms)')
-
-    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512.npz')
-    artifact_markers_data = data_obj['artifact_markers']
-    data_obj = SignalDataWithGroundTruth(
-        raw_data=data_obj['mixed_data'],
-        sampling_rate=data_obj['sampling_rate'],
-        ground_truth=data_obj['ground_truth'],
-        artifacts=data_obj['artifacts'],
-        artifact_markers=ArtifactTriggers(starts=artifact_markers_data)
-    )
-    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)] # ms
-    for window_size in window_sizes:
-        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
-        orthogonality(clean_neural_windows, artifact_windows, f'swec data (window size {window_size} ms)')
-
-    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_seizure_512.npz')
-    artifact_markers_data = data_obj['artifact_markers']
-    data_obj = SignalDataWithGroundTruth(
-        raw_data=data_obj['mixed_data'],
-        sampling_rate=data_obj['sampling_rate'],
-        ground_truth=data_obj['ground_truth'],
-        artifacts=data_obj['artifacts'],
-        artifact_markers=ArtifactTriggers(starts=artifact_markers_data)
-    )
-    window_sizes = [10, 100, 200, 500, int(1000 * data_obj.raw_data.shape[2] / data_obj.sampling_rate)]
-    for window_size in window_sizes:
-        clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
-        orthogonality(clean_neural_windows, artifact_windows, f'swec seizure data (window size {window_size} ms)')
+    for data_path, dataset_name in datasets:
+        print(f"\n{'='*60}\nProcessing: {dataset_name}\n{'='*60}")
+        data_obj_dict = data_handler.load_npz_data(data_path)
+        
+        if 'simulated' in dataset_name:
+            data_obj = SimulatedData(
+                raw_data=data_obj_dict['raw_data'],
+                sampling_rate=data_obj_dict['sampling_rate'],
+                ground_truth=data_obj_dict['ground_truth'],
+                artifacts=data_obj_dict['artifacts'],
+                artifact_markers=ArtifactTriggers(starts=data_obj_dict['artifact_markers']),  
+                firing_rate=data_obj_dict.get('firing_rate'),
+                spike_train=data_obj_dict.get('spike_train'),
+                lfp=data_obj_dict.get('lfp'),
+                stim_params=None,
+                snr=data_obj_dict.get('snr'),
+            )
+        else:
+            data_obj = SignalDataWithGroundTruth(
+                raw_data=data_obj_dict['mixed_data'],
+                sampling_rate=data_obj_dict['sampling_rate'],
+                ground_truth=data_obj_dict['ground_truth'],
+                artifacts=data_obj_dict['artifacts'],
+                artifact_markers=ArtifactTriggers(starts=data_obj_dict['artifact_markers']),
+            )
+        
+        max_time_samples = data_obj.raw_data.shape[-1]
+        window_sizes = [10, 100, 200, 500, int(1000 * max_time_samples / data_obj.sampling_rate)]
+        
+        for window_size in window_sizes:
+            clean_neural_windows, artifact_windows = extract_windows(data_obj, window_size)
+            print(f"clean_neural_windows: {clean_neural_windows.shape}")
+            orthogonality(clean_neural_windows, artifact_windows, f'{dataset_name} (window size {window_size} ms)')

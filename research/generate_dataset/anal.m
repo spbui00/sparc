@@ -1,7 +1,7 @@
 % SCRIPT TO PLOT **ONLY THE ARTIFACT**
 clear;
 clc;
-data_file_path = '/Users/bui/code/sparc/research/generate_dataset/SimulatedData.mat';
+data_file_path = '/Users/bui/code/sparc/research/generate_dataset/SimulatedData_lower_freq.mat';
 RawDataSampleRate = 30000;
 
 % --- Compare two different electrodes ---

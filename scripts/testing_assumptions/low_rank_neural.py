@@ -51,10 +51,11 @@ if __name__ == "__main__":
     data_handler = DataHandler()
     
     datasets = [
-        ('../../data/simulated_data_2x64_1000.npz', 'simulated data 1000Hz'),
-        ('../../data/simulated_data_2x64_30000.npz', 'simulated data 30000Hz'),
+        # ('../../data/simulated_data_2x64_1000.npz', 'simulated data 1000Hz'),
+        # ('../../data/simulated_data_2x64_30000.npz', 'simulated data 30000Hz'),
         ('../../data/added_artifacts_swec_data_512.npz', 'swec data 512Hz'),
-        ('../../data/added_artifacts_swec_data_seizure_512.npz', 'swec seizure data 512Hz')
+        ('../../data/added_artifacts_swec_data_seizure_512.npz', 'swec seizure data 512Hz'),
+        ('../../data/added_artifacts_swec_data_seizure_512_lower_freq.npz', 'swec seizure data 512Hz lower freq')
     ]
 
     for data_path, dataset_name in datasets:

@@ -1,0 +1,24 @@
+\begin{table}[h]
+\centering
+\caption{Top 10 Hyperparameter Configurations Based on Composite Score}
+\footnotesize{Hyperparameter values tested: $f_c \in \{10, 25, 50\}$ Hz, $w_{\text{cosine}} \in \{0.20, 1.00, 2.00\}$, $w_{\text{artifact rank}} \in \{0.20, 0.50, 1.00, 1.50\}$, $w_{\text{neural rank}} \in \{0.20, 0.50, 1.00, 1.50\}$, $w_{\text{spectral}} \in \{0.20, 0.50, 1.00, 2.00\}$, $w_{\text{slope}} \in \{0.20, 0.50, 1.00, 2.00\}$.}
+\label{tab:sweep_top10}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{ccccccc|ccc}
+\toprule
+\textbf{Rank} & \textbf{$f_c$ (Hz)} & \textbf{$w_{\text{cosine}}$} & \textbf{$w_{\text{artifact rank}}$} & \textbf{$w_{\text{neural rank}}$} & \textbf{$w_{\text{spectral}}$} & \textbf{$w_{\text{slope}}$} & \textbf{SNR} & \textbf{MSE} & \textbf{Coherence} \\
+\midrule
+1 & 10 & 1.00 & 1.50 & 0.20 & 2.00 & 0.20 & 4.53 & 308.00 & 0.1408 \\
+2 & 10 & 2.00 & 0.20 & 0.20 & 2.00 & 0.20 & 4.41 & 317.03 & 0.1404 \\
+3 & 10 & 1.00 & 0.50 & 0.20 & 2.00 & 0.20 & 4.36 & 320.47 & 0.1407 \\
+4 & 10 & 0.20 & 1.00 & 0.20 & 2.00 & 0.20 & 3.43 & 397.21 & 0.1456 \\
+5 & 10 & 0.20 & 0.50 & 0.20 & 2.00 & 0.20 & 4.04 & 345.34 & 0.1404 \\
+6 & 10 & 0.20 & 1.50 & 0.20 & 2.00 & 0.20 & 3.57 & 384.04 & 0.1433 \\
+7 & 10 & 0.20 & 1.00 & 0.20 & 2.00 & 0.50 & 4.03 & 345.58 & 0.1400 \\
+8 & 10 & 1.00 & 0.20 & 0.20 & 2.00 & 0.20 & 4.20 & 332.67 & 0.1368 \\
+9 & 10 & 1.00 & 1.00 & 0.20 & 2.00 & 0.20 & 3.14 & 424.00 & 0.1443 \\
+10 & 10 & 2.00 & 1.00 & 0.20 & 2.00 & 0.20 & 2.52 & 489.88 & 0.1478 \\
+\bottomrule
+\end{tabular}
+}%
+\end{table}

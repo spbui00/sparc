@@ -14,7 +14,7 @@ from sparc.core.plotting import NeuralPlotter
 
 def pca():    
     data_handler = DataHandler()
-    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512.npz')
+    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512_lower_freq_2pulses.npz')
     
     artifact_markers_data = data_obj['artifact_markers']
     if hasattr(artifact_markers_data, 'starts'):
@@ -55,7 +55,7 @@ def pca():
 
 def pca_2():
     data_handler = DataHandler()
-    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512.npz')
+    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512_lower_freq_2pulses.npz')
     
     artifact_markers_data = data_obj['artifact_markers']
     if hasattr(artifact_markers_data, 'starts'):

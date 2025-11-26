@@ -32,6 +32,7 @@ class SignalDataWithGroundTruth(SignalData):
     """Represents signal data with ground truth for evaluation."""
     ground_truth: np.ndarray
     artifacts: np.ndarray
+    artifacts_stim_params: Optional[Any] = field(default=None, kw_only=True)
 
 @dataclass
 class SimulatedData(SignalDataWithGroundTruth):

@@ -307,3 +307,5 @@ sparc.egg-info/
 .env.development.local
 .env.test.local
 .env.production.local
+
+sparc-nn/sweeps/sweep_*/

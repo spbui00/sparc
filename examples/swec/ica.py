@@ -9,7 +9,7 @@ import numpy as np
 
 def ica():
     data_handler = DataHandler()
-    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512.npz')
+    data_obj = data_handler.load_npz_data('../../data/added_artifacts_swec_data_512_lower_freq.npz')
     
     artifact_markers_data = data_obj['artifact_markers']
     
@@ -33,7 +33,7 @@ def ica():
     # )
 
     ica = ICA(
-        n_components=3,
+        n_components=2,
         features_axis=1,
         artifact_identify_method='kurtosis_min',
         mode='global',
@@ -52,7 +52,7 @@ def ica():
     tester.compare()
     # ica.set_sampling_rate(data_obj.sampling_rate)
     # ica.fit(data, artifact_markers=data_obj.artifact_markers)
-    # ica.plot_components()
+    ica.plot_components()
     # cleaned_data = ica.transform(data)
 
     # plotter.plot_trace_comparison(cleaned_data, data_obj.raw_data, 0, 0)

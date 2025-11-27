@@ -1,17 +1,10 @@
 import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-SWEEP_DIR = "sweep_1"
+from sweeps.generate_sweep_name import config_to_string
 
-def config_to_string(config, use_uncertainty_loss=False):
-    parts = []
-    for key, val in sorted(config.items()):
-        if isinstance(val, float):
-            parts.append(f"{key}_{val:.2f}")
-        else:
-            parts.append(f"{key}_{val}")
-    if use_uncertainty_loss:
-        parts.append("uncertainty_loss")
-    return "_".join(parts)
+SWEEP_DIR = "sweep_1_with_expert"
 
 def config_exists(config_str):
     config_dir = os.path.join(SWEEP_DIR, config_str)

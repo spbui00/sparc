@@ -1,6 +1,5 @@
 import torch
 import torch.optim as optim
-import numpy as np
 import os
 import argparse
 from datetime import datetime

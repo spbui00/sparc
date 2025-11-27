@@ -17,6 +17,7 @@ from sparc.core.neural_analyzer import NeuralAnalyzer
 from models import UNet1D, NeuralExpertAE
 from loss import PhysicsLoss
 from analyze_top import analyze_sweep
+from sweeps.generate_sweep_name import config_to_string as config_to_string_base
 
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 1
@@ -140,16 +141,8 @@ def get_model_architecture_info(model):
     }
 
 def config_to_string(base_config, w_expert, w_anchor):
-    """Create config string including expert weights"""
-    parts = []
-    for key, val in sorted(base_config.items()):
-        if isinstance(val, float):
-            parts.append(f"{key}_{val:.2f}")
-        else:
-            parts.append(f"{key}_{val}")
-    parts.append(f"w_expert_{w_expert:.2f}")
-    parts.append(f"w_anchor_{w_anchor:.2f}")
-    return "_".join(parts)
+    """Create config string including expert weights using centralized function"""
+    return config_to_string_base(base_config, use_uncertainty_loss=False, w_expert=w_expert, w_anchor=w_anchor)
 
 def config_exists(config_str):
     config_dir = os.path.join(SWEEP_2_DIR, config_str)

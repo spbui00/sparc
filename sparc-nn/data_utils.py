@@ -263,16 +263,28 @@ def prepare_swec_expert_dataset(mat_file_path, info_file_path=None, window_len_s
     
     # 1. Parse File Index to determine time offset
     # e.g. ID01_16h.mat -> index 16 -> starts at (16-1)*3600 seconds
+    # e.g. concatenated_hours_15_18.mat -> index 15 -> starts at (15-1)*3600 seconds
     filename = os.path.basename(mat_file_path)
-    match = re.search(r'(\d+)h\.mat', filename, re.IGNORECASE)
-    if match:
-        file_idx = int(match.group(1))
-        start_offset_sec = (file_idx - 1) * 3600
-        print(f"✔ Parsed File Index: {file_idx}")
-        print(f"✔ Global Time Offset: {start_offset_sec} seconds (Hour {file_idx-1} to {file_idx})")
+    
+    # Try concatenated format first: concatenated_hours_15_18.mat
+    match_concatenated = re.search(r'concatenated_hours_(\d+)_(\d+)\.mat', filename, re.IGNORECASE)
+    if match_concatenated:
+        start_hour = int(match_concatenated.group(1))
+        end_hour = int(match_concatenated.group(2))
+        start_offset_sec = (start_hour - 1) * 3600
+        print(f"✔ Parsed File Index (concatenated): {start_hour} to {end_hour}")
+        print(f"✔ Global Time Offset: {start_offset_sec} seconds (Hours {start_hour} to {end_hour})")
     else:
-        print("Warning: Could not determine file index from name. Assuming 0 offset.")
-        start_offset_sec = 0
+        # Try single hour format: 16h.mat or ID01_16h.mat
+        match = re.search(r'(\d+)h\.mat', filename, re.IGNORECASE)
+        if match:
+            file_idx = int(match.group(1))
+            start_offset_sec = (file_idx - 1) * 3600
+            print(f"✔ Parsed File Index: {file_idx}")
+            print(f"✔ Global Time Offset: {start_offset_sec} seconds (Hour {file_idx-1} to {file_idx})")
+        else:
+            print("Warning: Could not determine file index from name. Assuming 0 offset.")
+            start_offset_sec = 0
 
     # 2. Load Data
     try:

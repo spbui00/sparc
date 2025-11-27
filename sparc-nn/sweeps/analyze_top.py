@@ -63,6 +63,7 @@ def parse_config_from_dirname(dirname: str) -> Dict[str, float]:
     Parse hyperparameters from directory name.
     
     Example: f_cutoff_25_w_clean_0_w_cosine_1_w_rank_a_0.50_w_rank_s_0.50_w_spectral_0.50_w_spectral_slope_0.50
+    Example with expert: ..._w_spectral_slope_0.50_w_expert_1.00_w_anchor_0.50
     """
     config = {}
     
@@ -95,6 +96,16 @@ def parse_config_from_dirname(dirname: str) -> Dict[str, float]:
     match = re.search(r'w_spectral_slope_([\d\.]+)', dirname)
     if match:
         config['w_spectral_slope'] = float(match.group(1))
+    
+    # Extract w_expert (for expert-guided sweeps)
+    match = re.search(r'w_expert_([\d\.]+)', dirname)
+    if match:
+        config['w_expert'] = float(match.group(1))
+    
+    # Extract w_anchor (for expert-guided sweeps)
+    match = re.search(r'w_anchor_([\d\.]+)', dirname)
+    if match:
+        config['w_anchor'] = float(match.group(1))
     
     return config
 
@@ -161,7 +172,9 @@ def compute_sweep_ranges(all_results: List[Tuple[Dict, Dict, float, str]]) -> Di
         'w_rank_a': [],
         'w_rank_s': [],
         'w_spectral': [],
-        'w_spectral_slope': []
+        'w_spectral_slope': [],
+        'w_expert': [],
+        'w_anchor': []
     }
     
     for config, _, _, _ in all_results:
@@ -270,6 +283,10 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
     caption = f"Top {num_results} Hyperparameter Configurations Based on Composite Score (weights: SNR Improvement={w_snr}, MSE={w_mse}, Coherence={w_coherence})"
     latex_lines.append(f"\\caption{{{caption}}}")
     
+    # Check if expert/anchor weights are present
+    has_expert = any('w_expert' in config for config, _, _, _ in top_results)
+    has_anchor = any('w_anchor' in config for config, _, _, _ in top_results)
+    
     # Add sweep ranges as a note
     if sweep_ranges:
         ranges_text = "Hyperparameter values tested: "
@@ -298,33 +315,79 @@ def generate_latex_table(top_results: List[Tuple[Dict, Dict, float, str]], sweep
             values = sweep_ranges['w_spectral_slope']
             values_str = ", ".join([f"{v:.2f}" for v in values])
             range_parts.append(f"$w_{{\\text{{slope}}}} \\in \\{{{values_str}\\}}$")
+        if 'w_expert' in sweep_ranges:
+            values = sweep_ranges['w_expert']
+            values_str = ", ".join([f"{v:.2f}" for v in values])
+            range_parts.append(f"$w_{{\\text{{expert}}}} \\in \\{{{values_str}\\}}$")
+        if 'w_anchor' in sweep_ranges:
+            values = sweep_ranges['w_anchor']
+            values_str = ", ".join([f"{v:.2f}" for v in values])
+            range_parts.append(f"$w_{{\\text{{anchor}}}} \\in \\{{{values_str}\\}}$")
         
         ranges_text += ", ".join(range_parts) + "."
         latex_lines.append(f"\\footnotesize{{{ranges_text}}}")
     
     latex_lines.append(f"\\label{{tab:sweep_top{num_results}}}")
     latex_lines.append("\\resizebox{\\textwidth}{!}{%")
-    latex_lines.append("\\begin{tabular}{cccccc|cccc}")
+    
+    # Build table format and header dynamically
+    base_cols = 6  # f_cutoff, w_cosine, w_rank_a, w_rank_s, w_spectral, w_spectral_slope
+    expert_cols = (1 if has_expert else 0) + (1 if has_anchor else 0)
+    metric_cols = 4  # SNR Imp, MSE, Coherence, Score
+    total_cols = base_cols + expert_cols + metric_cols
+    
+    # Table format: base hyperparams | expert/anchor (if present) | metrics
+    if expert_cols > 0:
+        table_format = "c" * base_cols + "|" + "c" * expert_cols + "|" + "c" * metric_cols
+    else:
+        table_format = "c" * base_cols + "|" + "c" * metric_cols
+    
+    latex_lines.append(f"\\begin{{tabular}}{{{table_format}}}")
     latex_lines.append("\\toprule")
-    latex_lines.append("\\textbf{$f_c$ (Hz)} & \\textbf{$w_{\\text{cosine}}$} & \\textbf{$w_{\\text{artifact rank}}$} & \\textbf{$w_{\\text{neural rank}}$} & \\textbf{$w_{\\text{spectral}}$} & \\textbf{$w_{\\text{slope}}$} & \\textbf{SNR Imp.} & \\textbf{MSE} & \\textbf{Coherence} & \\textbf{Score} \\\\")
+    
+    # Build header
+    header_parts = [
+        "\\textbf{$f_c$ (Hz)}",
+        "\\textbf{$w_{\\text{cosine}}$}",
+        "\\textbf{$w_{\\text{artifact rank}}$}",
+        "\\textbf{$w_{\\text{neural rank}}$}",
+        "\\textbf{$w_{\\text{spectral}}$}",
+        "\\textbf{$w_{\\text{slope}}$}"
+    ]
+    if has_expert:
+        header_parts.append("\\textbf{$w_{\\text{expert}}$}")
+    if has_anchor:
+        header_parts.append("\\textbf{$w_{\\text{anchor}}$}")
+    header_parts.extend([
+        "\\textbf{SNR Imp.}",
+        "\\textbf{MSE}",
+        "\\textbf{Coherence}",
+        "\\textbf{Score}"
+    ])
+    latex_lines.append(" & ".join(header_parts) + " \\\\")
     latex_lines.append("\\midrule")
     
     # Table rows
     for config, metrics, score, dirname in top_results:
-        f_cutoff = config.get('f_cutoff', 0)
-        w_cosine = config.get('w_cosine', 0)
-        w_rank_a = config.get('w_rank_a', 0)
-        w_rank_s = config.get('w_rank_s', 0)
-        w_spectral = config.get('w_spectral', 0)
-        w_spectral_slope = config.get('w_spectral_slope', 0)
-        
-        snr_improvement = metrics['snr_improvement']
-        mse = metrics['mse']
-        median_coherence = metrics['median_coherence']
-        
-        # Format numbers
-        row = f"{f_cutoff:.0f} & {w_cosine:.2f} & {w_rank_a:.2f} & {w_rank_s:.2f} & {w_spectral:.2f} & {w_spectral_slope:.2f} & {snr_improvement:.2f} & {mse:.2f} & {median_coherence:.4f} & {score:.4f} \\\\"
-        latex_lines.append(row)
+        row_parts = [
+            f"{config.get('f_cutoff', 0):.0f}",
+            f"{config.get('w_cosine', 0):.2f}",
+            f"{config.get('w_rank_a', 0):.2f}",
+            f"{config.get('w_rank_s', 0):.2f}",
+            f"{config.get('w_spectral', 0):.2f}",
+            f"{config.get('w_spectral_slope', 0):.2f}"
+        ]
+        if has_expert:
+            row_parts.append(f"{config.get('w_expert', 0):.2f}")
+        if has_anchor:
+            row_parts.append(f"{config.get('w_anchor', 0):.2f}")
+        row_parts.extend([
+            f"{metrics['snr_improvement']:.2f}",
+            f"{metrics['mse']:.2f}",
+            f"{metrics['median_coherence']:.4f}",
+            f"{score:.4f}"
+        ])
+        latex_lines.append(" & ".join(row_parts) + " \\\\")
     
     # Table footer
     latex_lines.append("\\bottomrule")

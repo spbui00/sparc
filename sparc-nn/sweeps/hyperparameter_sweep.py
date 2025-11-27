@@ -502,12 +502,12 @@ def run_training(config, use_uncertainty_loss=False):
     print(f"\nConfig {config_str} completed. Results saved to {config_dir}\n")
 
 hyperparameter_ranges = {
-    'f_cutoff': [10,25],
-    'w_cosine': [1, 2],
-    'w_rank_s': [0, 0.2, 0.5],
-    'w_spectral': [1,2,3],
-    'w_spectral_slope': [0,0.2,0.5],
-    'w_rank_a': [0.2, 1],
+    'f_cutoff': [0, 10,25, 50],
+    'w_cosine': [0, 1, 2],
+    'w_rank_s': [0, 0, 0.2, 0.5],
+    'w_spectral': [0, 1,2,3],
+    'w_spectral_slope': [0,0.2,0.5,1],
+    'w_rank_a': [0, 1,2,3],
 }
 
 configs = []

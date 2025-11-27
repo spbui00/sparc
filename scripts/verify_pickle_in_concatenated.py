@@ -174,4 +174,3 @@ print(f"Pickle file (patient {patient_id}) contains {trials} trials of {channels
 print(f"Each trial: {total_samples_pickle} samples ({duration_pickle:.2f} seconds)")
 print(f"Total pickle data: {expected_total_samples} samples ({expected_total_samples/fs_mat/3600:.4f} hours)")
 print(f"\nMat file: {n_channels_mat} channels, {n_samples_mat} samples ({duration_mat:.2f} seconds, {duration_mat/3600:.4f} hours)")
-

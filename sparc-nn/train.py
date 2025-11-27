@@ -16,6 +16,7 @@ from uncertainty_loss import UncertaintyWeightedLoss
 from data_utils import prepare_dataset
 from glob import glob
 from eval import compute_metrics, perform_spectral_analysis
+import random
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train U-Net for neural signal separation')
@@ -49,6 +50,13 @@ def parse_args():
     return parser.parse_args()
 
 def main():
+    seed = 42
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+        
     args = parse_args()
     
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
@@ -333,7 +341,37 @@ def main():
     mixed_data_np = new_mixed_signal.cpu().numpy()
     predicted_artifact_np = predicted_artifact.cpu().numpy()
     
-    # Select trial for evaluation - ensure all arrays have shape (1, C, T) for plotting
+    # Calculate SNR per trial and average (matching hyperparameter_sweep.py)
+    n_trials_eval = predicted_neural_np.shape[0]
+    snr_before_per_trial = []
+    snr_after_per_trial = []
+    snr_improvement_per_trial = []
+    
+    for trial_idx in range(n_trials_eval):
+        trial_gt = ground_truth_neural[trial_idx:trial_idx+1]
+        trial_mixed = mixed_data_np[trial_idx:trial_idx+1]
+        trial_predicted = predicted_neural_np[trial_idx:trial_idx+1]
+        
+        trial_noise_before = trial_mixed - trial_gt
+        trial_noise_after = trial_predicted - trial_gt
+        
+        trial_snr_before = evaluator.calculate_snr(trial_gt, trial_noise_before)
+        trial_snr_after = evaluator.calculate_snr(trial_gt, trial_noise_after)
+        trial_snr_improvement = evaluator.calculate_snr_improvement(trial_mixed, trial_predicted, trial_gt)
+        
+        snr_before_per_trial.append(trial_snr_before)
+        snr_after_per_trial.append(trial_snr_after)
+        snr_improvement_per_trial.append(trial_snr_improvement)
+    
+    snr_before = np.mean(snr_before_per_trial)
+    snr_after = np.mean(snr_after_per_trial)
+    snr_improvement = np.mean(snr_improvement_per_trial)
+    
+    print(f"\nSNR Before (Mixed): {snr_before:.2f} dB (averaged over {n_trials_eval} trials)")
+    print(f"SNR After (Cleaned): {snr_after:.2f} dB (averaged over {n_trials_eval} trials)")
+    print(f"SNR Improvement: {snr_improvement:.2f} dB (averaged over {n_trials_eval} trials)")
+    
+    # Select trial for plotting - ensure all arrays have shape (1, C, T) for plotting
     eval_trial_idx = 0
     if trial_indices:
         # Use first trial from selected trials
@@ -345,15 +383,15 @@ def main():
         ground_truth_neural_eval = ground_truth_neural[eval_trial_idx:eval_trial_idx+1]
         ground_truth_artifacts_eval = ground_truth_artifacts[eval_trial_idx:eval_trial_idx+1]
     
-    # Ensure predicted arrays also have shape (1, C, T) - take first trial from batch
-    predicted_neural_np = predicted_neural_np[0:1]  # (1, C, T)
-    mixed_data_np = mixed_data_np[0:1]  # (1, C, T)
-    predicted_artifact_np = predicted_artifact_np[0:1]  # (1, C, T)
+    # For plotting, use first trial from batch
+    predicted_neural_np_plot = predicted_neural_np[0:1]  # (1, C, T)
+    mixed_data_np_plot = mixed_data_np[0:1]  # (1, C, T)
+    predicted_artifact_np_plot = predicted_artifact_np[0:1]  # (1, C, T)
     
-    # Calculate metrics using shared function
+    # Calculate other metrics using all trials (for consistency with hyperparameter_sweep.py)
     compute_metrics(
-        ground_truth_neural=ground_truth_neural_eval,
-        ground_truth_artifacts=ground_truth_artifacts_eval,
+        ground_truth_neural=ground_truth_neural,
+        ground_truth_artifacts=ground_truth_artifacts,
         predicted_neural_np=predicted_neural_np,
         predicted_artifact_np=predicted_artifact_np,
         analyzer=analyzer,
@@ -380,9 +418,9 @@ def main():
     # Spectral analysis
     print("\n--- Spectral Analysis ---")
     perform_spectral_analysis(ground_truth_neural_eval, analyzer, "GT Neural", plot=True, save=args.save_plots, save_path=None)
-    perform_spectral_analysis(predicted_neural_np, analyzer, "Predicted Neural", plot=True, save=args.save_plots, save_path=None)
+    perform_spectral_analysis(predicted_neural_np_plot, analyzer, "Predicted Neural", plot=True, save=args.save_plots, save_path=None)
     perform_spectral_analysis(ground_truth_artifacts_eval, analyzer, "GT Artifact", plot=True, save=args.save_plots, save_path=None)
-    perform_spectral_analysis(predicted_artifact_np, analyzer, "Predicted Artifact", plot=True, save=args.save_plots, save_path=None)
+    perform_spectral_analysis(predicted_artifact_np_plot, analyzer, "Predicted Artifact", plot=True, save=args.save_plots, save_path=None)
     
     # Plot signal comparisons
     print("\n--- Plotting Signal Comparisons ---")
@@ -396,8 +434,8 @@ def main():
     
     plotter.plot_cleaned_comparison(
         ground_truth=ground_truth_neural_for_plot,
-        mixed_data=mixed_data_np,
-        cleaned_data=predicted_neural_np,
+        mixed_data=mixed_data_np_plot,
+        cleaned_data=predicted_neural_np_plot,
         trial_idx=0,
         channel_idx=channel_idx,
         title=f"Neural Signal Comparison - Trial {trial_idx_for_title}, Channel {channel_idx}",
@@ -405,7 +443,7 @@ def main():
     )
     
     plotter.plot_trace_comparison(
-        cleaned=predicted_artifact_np,
+        cleaned=predicted_artifact_np_plot,
         mixed_data=ground_truth_artifacts_for_plot,
         trial_idx=0,
         channel_idx=channel_idx,
@@ -416,7 +454,7 @@ def main():
     # Plot all four signals in one figure
     fig, axs = plt.subplots(4, 1, figsize=(12, 10), sharex=True)
     
-    x_axis = np.arange(predicted_neural_np.shape[2]) / data_obj.sampling_rate
+    x_axis = np.arange(predicted_neural_np_plot.shape[2]) / data_obj.sampling_rate
     plot_trial_idx = 0
     
     # Plot 1: Ground Truth Neural Signal
@@ -430,7 +468,7 @@ def main():
     axs[0].spines['right'].set_visible(False)
     
     # Plot 2: Predicted Neural Signal
-    axs[1].plot(x_axis, predicted_neural_np[plot_trial_idx, channel_idx, :], 
+    axs[1].plot(x_axis, predicted_neural_np_plot[plot_trial_idx, channel_idx, :], 
                 linewidth=1.5, color='#1f77b4', label='Predicted Neural')
     axs[1].set_ylabel('Amplitude (µV)')
     axs[1].set_title(f'Predicted Neural Signal - Trial {trial_idx_for_title}, Channel {channel_idx}')
@@ -450,7 +488,7 @@ def main():
     axs[2].spines['right'].set_visible(False)
     
     # Plot 4: Predicted Artifact
-    axs[3].plot(x_axis, predicted_artifact_np[plot_trial_idx, channel_idx, :], 
+    axs[3].plot(x_axis, predicted_artifact_np_plot[plot_trial_idx, channel_idx, :], 
                 linewidth=1.5, color='#d62728', label='Predicted Artifact')
     axs[3].set_xlabel('Time (s)')
     axs[3].set_ylabel('Amplitude (µV)')

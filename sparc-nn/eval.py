@@ -23,6 +23,20 @@ def _cov(M: torch.Tensor) -> torch.Tensor:
     Cov = (M_centered @ M_centered.transpose(-1, -2)) / (N - 1)
     return Cov
 
+def _calculate_snr_per_channel(signal: np.ndarray, noise: np.ndarray) -> np.ndarray:
+    """Calculate SNR per channel (averaging over trials and time)"""
+    # signal and noise shape: (trials, channels, time)
+    signal_power = np.mean(signal ** 2, axis=(0, 2))  # Average over trials and time: (channels,)
+    noise_power = np.mean(noise ** 2, axis=(0, 2))    # Average over trials and time: (channels,)
+    
+    # Handle zero noise power
+    snr_db = np.zeros_like(signal_power)
+    valid_mask = noise_power > 0
+    snr_db[valid_mask] = 10 * np.log10(signal_power[valid_mask] / noise_power[valid_mask])
+    snr_db[~valid_mask] = np.inf
+    
+    return snr_db
+
 def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neural_np, 
                     predicted_artifact_np, analyzer, evaluator, mixed_data_np=None, print_results=True):
     """Compute evaluation metrics including SNR, MSE, soft rank, cosine similarity, PSD, and coherence"""
@@ -45,6 +59,39 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
         snr_before = None
     
     snr_after = evaluator.calculate_snr(ground_truth_neural, noise_after)
+    
+    # Calculate SNR per channel
+    snr_after_per_channel = _calculate_snr_per_channel(ground_truth_neural, noise_after)
+    snr_after_best = np.max(snr_after_per_channel)
+    snr_after_best_channel = np.argmax(snr_after_per_channel)
+    
+    # For worst, ignore infinite values
+    finite_mask = np.isfinite(snr_after_per_channel)
+    if np.any(finite_mask):
+        snr_after_worst = np.min(snr_after_per_channel[finite_mask])
+        snr_after_worst_channel = np.where(finite_mask)[0][np.argmin(snr_after_per_channel[finite_mask])]
+    else:
+        snr_after_worst = np.inf
+        snr_after_worst_channel = None
+    
+    if noise_before is not None:
+        snr_before_per_channel = _calculate_snr_per_channel(ground_truth_neural, noise_before)
+        snr_before_best = np.max(snr_before_per_channel)
+        snr_before_best_channel = np.argmax(snr_before_per_channel)
+        
+        finite_mask_before = np.isfinite(snr_before_per_channel)
+        if np.any(finite_mask_before):
+            snr_before_worst = np.min(snr_before_per_channel[finite_mask_before])
+            snr_before_worst_channel = np.where(finite_mask_before)[0][np.argmin(snr_before_per_channel[finite_mask_before])]
+        else:
+            snr_before_worst = np.inf
+            snr_before_worst_channel = None
+    else:
+        snr_before_per_channel = None
+        snr_before_best = None
+        snr_before_worst = None
+        snr_before_best_channel = None
+        snr_before_worst_channel = None
     
     mse_neural = np.mean((predicted_neural_np - ground_truth_neural) ** 2)
     mse_artifact = np.mean((predicted_artifact_np - ground_truth_artifacts) ** 2)
@@ -96,6 +143,14 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
         'snr_before': snr_before,
         'snr_after': snr_after,
         'snr_improvement': snr_improvement,
+        'snr_after_best': snr_after_best,
+        'snr_after_worst': snr_after_worst,
+        'snr_after_best_channel': int(snr_after_best_channel),
+        'snr_after_worst_channel': int(snr_after_worst_channel) if snr_after_worst_channel is not None else None,
+        'snr_before_best': snr_before_best,
+        'snr_before_worst': snr_before_worst,
+        'snr_before_best_channel': int(snr_before_best_channel) if snr_before_best_channel is not None else None,
+        'snr_before_worst_channel': int(snr_before_worst_channel) if snr_before_worst_channel is not None else None,
         'mse_neural': mse_neural,
         'mse_artifact': mse_artifact,
         'soft_rank_a': torch.mean(soft_rank_a).item(),
@@ -111,7 +166,14 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
     if print_results:
         if snr_before is not None:
             print(f"SNR Before (Mixed): {snr_before:.2f} dB")
+            if snr_before_best is not None:
+                print(f"SNR Before - Best: {snr_before_best:.2f} dB at channel {snr_before_best_channel}")
+                if snr_before_worst_channel is not None:
+                    print(f"SNR Before - Worst: {snr_before_worst:.2f} dB at channel {snr_before_worst_channel}")
         print(f"SNR After (Cleaned): {snr_after:.2f} dB")
+        print(f"SNR After - Best: {snr_after_best:.2f} dB at channel {snr_after_best_channel}")
+        if snr_after_worst_channel is not None:
+            print(f"SNR After - Worst: {snr_after_worst:.2f} dB at channel {snr_after_worst_channel}")
         if snr_improvement is not None:
             print(f"SNR Improvement: {snr_improvement:.2f} dB")
         

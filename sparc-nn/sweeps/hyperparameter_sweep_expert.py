@@ -2,6 +2,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import random
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
@@ -18,6 +19,14 @@ from models import UNet1D, NeuralExpertAE
 from loss import PhysicsLoss
 from analyze_top import analyze_sweep
 from sweeps.generate_sweep_name import config_to_string as config_to_string_base
+from data_utils import prepare_dataset
+
+seed = 42
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
+if torch.cuda.is_available():
+    torch.cuda.manual_seed_all(seed)
 
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 1
@@ -74,7 +83,6 @@ def create_soft_artifact_mask(indices, durations, seq_length, blur_radius=5):
 
 mixed_data = data_obj.raw_data.astype(np.float32)
 ARTIFACT_DURATION = int(40 / 1000 * data_obj.sampling_rate)
-artifact_indices_raw = data_obj.artifact_markers.starts
 
 N_SAMPLES = mixed_data.shape[2]
 N_DATA_CHANNELS = mixed_data.shape[1]
@@ -82,29 +90,20 @@ IN_CHANNELS = N_DATA_CHANNELS + 1
 OUT_CHANNELS = N_DATA_CHANNELS
 N_TRIALS = mixed_data.shape[0]
 
-print("Precomputing artifact masks...")
-artifact_masks = []
-for trial_idx in range(N_TRIALS):
-    if artifact_indices_raw.ndim == 3:
-        trial_indices = artifact_indices_raw[trial_idx].flatten()
-    elif artifact_indices_raw.ndim == 2:
-        trial_indices = artifact_indices_raw[trial_idx]
-    else:
-        trial_indices = artifact_indices_raw
-    
-    trial_indices = trial_indices[trial_indices >= 0]
-    trial_durations = [ARTIFACT_DURATION] * len(trial_indices)
-    mask = create_soft_artifact_mask(trial_indices, trial_durations, N_SAMPLES, blur_radius=5)
-    artifact_masks.append(mask)
+# Use prepare_dataset() for robust normalization (like train.py)
+print("Preparing dataset with robust normalization...")
+dataset, data_loader, artifact_masks, data_mean, data_std = prepare_dataset(
+    data_obj=data_obj,
+    data_obj_dict=data_obj_dict,
+    batch_size=BATCH_SIZE,
+    use_normalization=True,
+    shuffle=True,
+    artifact_duration_ms=40,
+    trial_indices=None  # Use all trials
+)
 
-artifact_masks = torch.stack(artifact_masks)
-stim_trace_tensor = torch.from_numpy(data_obj_dict['stim_trace']).float()
-
-data_mean = torch.mean(torch.from_numpy(mixed_data).float(), dim=(0, 2), keepdim=True)
-data_std = torch.std(torch.from_numpy(mixed_data).float(), dim=(0, 2), keepdim=True)
-
-dataset = ArtifactDataset(mixed_data, stim_trace_tensor, artifact_masks, data_mean, data_std)
-data_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+# prepare_dataset handles everything - artifact_masks are already in the dataset
+# We keep a reference to data_mean and data_std for denormalization later
 
 # Load expert model
 print("\nLoading expert model...")
@@ -242,16 +241,26 @@ def run_training(base_config, w_expert, w_anchor):
     
     # Evaluation
     model.eval()
-    eval_dataset = ArtifactDataset(mixed_data, stim_trace_tensor, artifact_masks, data_mean, data_std)
-    eval_loader = DataLoader(eval_dataset, batch_size=N_TRIALS, shuffle=False)
+    # Use prepare_dataset for evaluation too (consistent normalization)
+    # This will use the same robust stats computed during training
+    eval_dataset, eval_loader, eval_artifact_masks, eval_data_mean, eval_data_std = prepare_dataset(
+        data_obj=data_obj,
+        data_obj_dict=data_obj_dict,
+        batch_size=N_TRIALS,
+        use_normalization=True,
+        shuffle=False,
+        artifact_duration_ms=40,
+        trial_indices=None  # Use all trials
+    )
     
+    # Use the same normalization stats from training (should be the same, but use training ones for consistency)
     with torch.no_grad():
         new_mixed_signal_norm, new_stim_trace, artifact_mask_batch = next(iter(eval_loader))
         new_mixed_signal_norm_dev = new_mixed_signal_norm.to(DEVICE)
         new_stim_trace_dev = new_stim_trace.to(DEVICE)
         artifact_mask_batch_dev = artifact_mask_batch.to(DEVICE)
-        data_mean_dev = data_mean.to(DEVICE)
-        data_std_dev = data_std.to(DEVICE)
+        data_mean_dev = data_mean.to(DEVICE)  # Use training stats
+        data_std_dev = data_std.to(DEVICE)    # Use training stats
         
         predicted_artifact_norm = model(new_mixed_signal_norm_dev, new_stim_trace_dev)
         predicted_neural_signal_norm = new_mixed_signal_norm_dev - predicted_artifact_norm
@@ -300,16 +309,34 @@ def run_training(base_config, w_expert, w_anchor):
     trial_idx = 0
     channel_idx = 0
     
-    noise_before = mixed_data_np - ground_truth_neural
-    noise_after = predicted_neural_np - ground_truth_neural
+    # Calculate SNR per trial and average (instead of pooling all trials)
+    snr_before_per_trial = []
+    snr_after_per_trial = []
+    snr_improvement_per_trial = []
     
-    snr_before = evaluator.calculate_snr(ground_truth_neural, noise_before)
-    snr_after = evaluator.calculate_snr(ground_truth_neural, noise_after)
-    snr_improvement = evaluator.calculate_snr_improvement(mixed_data_np, predicted_neural_np, ground_truth_neural)
+    for trial_idx in range(N_TRIALS):
+        trial_gt = ground_truth_neural[trial_idx:trial_idx+1]
+        trial_mixed = mixed_data_np[trial_idx:trial_idx+1]
+        trial_predicted = predicted_neural_np[trial_idx:trial_idx+1]
+        
+        trial_noise_before = trial_mixed - trial_gt
+        trial_noise_after = trial_predicted - trial_gt
+        
+        trial_snr_before = evaluator.calculate_snr(trial_gt, trial_noise_before)
+        trial_snr_after = evaluator.calculate_snr(trial_gt, trial_noise_after)
+        trial_snr_improvement = evaluator.calculate_snr_improvement(trial_mixed, trial_predicted, trial_gt)
+        
+        snr_before_per_trial.append(trial_snr_before)
+        snr_after_per_trial.append(trial_snr_after)
+        snr_improvement_per_trial.append(trial_snr_improvement)
     
-    log_and_save(f"\nSNR Before (Mixed): {snr_before:.2f} dB")
-    log_and_save(f"SNR After (Cleaned): {snr_after:.2f} dB")
-    log_and_save(f"SNR Improvement: {snr_improvement:.2f} dB")
+    snr_before = np.mean(snr_before_per_trial)
+    snr_after = np.mean(snr_after_per_trial)
+    snr_improvement = np.mean(snr_improvement_per_trial)
+    
+    log_and_save(f"\nSNR Before (Mixed): {snr_before:.2f} dB (averaged over {N_TRIALS} trials)")
+    log_and_save(f"SNR After (Cleaned): {snr_after:.2f} dB (averaged over {N_TRIALS} trials)")
+    log_and_save(f"SNR Improvement: {snr_improvement:.2f} dB (averaged over {N_TRIALS} trials)")
     
     MSE = np.mean((predicted_neural_np - ground_truth_neural) ** 2)
     log_and_save(f"\nMSE: {MSE:.4f}")
@@ -492,6 +519,8 @@ def run_training(base_config, w_expert, w_anchor):
         'w_expert': w_expert,
         'w_anchor': w_anchor,
         'loss_history': loss_history,
+        'data_mean': data_mean,
+        'data_std': data_std,
     }, os.path.join(config_dir, 'model.pth'))
     
     with open(os.path.join(config_dir, "results.txt"), 'w') as f:

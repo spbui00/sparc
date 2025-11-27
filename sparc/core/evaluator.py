@@ -9,6 +9,27 @@ class Evaluator(NeuralAnalyzer):
     def __init__(self, sampling_rate: float):
         super().__init__(sampling_rate)
 
+
+    def calculate_artifact_suppression(self, original: np.ndarray, cleaned: np.ndarray, ground_truth: np.ndarray) -> float:
+        # amplitude
+        artifact_amplitude_original = np.max(np.abs(original))
+        artifact_amplitude_cleaned = np.max(np.abs(cleaned - ground_truth))
+        # power
+        artifact_power_original = np.mean(original ** 2)
+        artifact_power_cleaned = np.mean((cleaned - ground_truth) ** 2)
+        # calculate amplitude and power ratios
+        suppression_amplitude_ratio = np.nan
+        suppression_power_ratio_db = np.nan
+        if artifact_amplitude_cleaned > 0:
+            suppression_amplitude_ratio = artifact_amplitude_original / artifact_amplitude_cleaned
+            suppression_amplitude_ratio_db = 20 * np.log10(suppression_amplitude_ratio)
+
+        if  artifact_power_cleaned > 0:
+            suppression_power_ratio = artifact_power_original / artifact_power_cleaned
+            suppression_power_ratio_db = 10 * np.log10(suppression_power_ratio)
+            
+        return suppression_amplitude_ratio_db, suppression_power_ratio_db
+
     
     def evaluate_spikes(self, cleaned_signal: np.ndarray, ground_truth_signal: np.ndarray, bin_width_ms: float = 0.1) -> Dict[str, Any]:
         if cleaned_signal.shape != ground_truth_signal.shape:

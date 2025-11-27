@@ -90,10 +90,6 @@ def generate_sweep_name(f_cutoff=None, w_cosine=None, w_rank_s=None,
         config['w_spectral_slope'] = w_spectral_slope
     if w_rank_a is not None:
         config['w_rank_a'] = w_rank_a
-    if w_expert is not None:
-        config['w_expert'] = w_expert
-    if w_anchor is not None:
-        config['w_anchor'] = w_anchor
     
     return config_to_string(config, use_uncertainty_loss=use_uncertainty_loss, w_expert=w_expert, w_anchor=w_anchor)
 

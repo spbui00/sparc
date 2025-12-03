@@ -20,12 +20,43 @@ class PhysicsLoss(nn.Module):
         self.f_cutoff = f_cutoff
         self.eps = eps
 
-    def _spectral_slope_loss(self, x: torch.Tensor) -> torch.Tensor:        
-        s_fft = torch.fft.rfft(x, dim=-1)
-        s_log_psd = torch.log(torch.abs(s_fft)**2 + self.eps)
-
+    def _spectral_slope_loss(self, x: torch.Tensor, nperseg: int = 256) -> torch.Tensor:
+        T, C, N = x.shape
+        nperseg = min(nperseg, N)
+        noverlap = nperseg // 2
+        
+        if N < nperseg:
+            s_fft = torch.fft.rfft(x, dim=-1)
+            s_psd = torch.abs(s_fft)**2
+            s_log_psd = torch.log(s_psd + self.eps)
+        else:
+            window = torch.hann_window(nperseg, device=x.device, dtype=x.dtype)
+            psd_segments = []
+            n_segments = max(1, (N - noverlap) // (nperseg - noverlap))
+            
+            for i in range(n_segments):
+                start_idx = i * (nperseg - noverlap)
+                end_idx = start_idx + nperseg
+                if end_idx > N:
+                    break
+                
+                segment = x[..., start_idx:end_idx]
+                windowed_segment = segment * window.view(1, 1, -1)
+                s_fft_seg = torch.fft.rfft(windowed_segment, dim=-1)
+                psd_seg = torch.abs(s_fft_seg)**2
+                psd_segments.append(psd_seg)
+            
+            if len(psd_segments) > 0:
+                s_psd = torch.stack(psd_segments, dim=0)
+                s_psd = torch.mean(s_psd, dim=0)
+                s_log_psd = torch.log(s_psd + self.eps)
+            else:
+                s_fft = torch.fft.rfft(x, dim=-1)
+                s_psd = torch.abs(s_fft)**2
+                s_log_psd = torch.log(s_psd + self.eps)
+        
         diff = s_log_psd[..., 1:] - s_log_psd[..., :-1]
-
+        
         positive_slope_penalty = torch.relu(diff) ** 2
         return torch.mean(positive_slope_penalty)
 
@@ -83,4 +114,4 @@ class PhysicsLoss(nn.Module):
             'spectral_slope_s': loss_spectral_slope_s,
         }
 
-        return total_loss
+        # return total_loss

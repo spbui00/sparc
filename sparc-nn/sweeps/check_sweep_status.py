@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from sweeps.generate_sweep_name import config_to_string
 
-SWEEP_DIR = "sweep_2"
+SWEEP_DIR = "sweep_res"
 
 def config_exists(config_str):
     config_dir = os.path.join(SWEEP_DIR, config_str)
@@ -12,12 +12,12 @@ def config_exists(config_str):
     return os.path.exists(results_file)
 
 hyperparameter_ranges = {
-    'f_cutoff': [10,25],
-    'w_cosine': [1, 2],
-    'w_rank_s': [0, 0.2, 0.5],
-    'w_spectral': [1,2,3],
-    'w_spectral_slope': [0,0.2,0.5],
-    'w_rank_a': [0.2, 1],
+    'f_cutoff': [0, 10,25, 50],
+    'w_cosine': [0, 1, 2],
+    'w_rank_s': [0, 0, 0.2, 0.5],
+    'w_spectral': [0, 1,2,3],
+    'w_spectral_slope': [0,0.2,0.5,1],
+    'w_rank_a': [0, 1,2,3],
 }
 
 configs = []

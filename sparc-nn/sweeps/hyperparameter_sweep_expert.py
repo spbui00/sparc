@@ -338,6 +338,25 @@ def run_training(base_config, w_expert, w_anchor):
     log_and_save(f"SNR After (Cleaned): {snr_after:.2f} dB (averaged over {N_TRIALS} trials)")
     log_and_save(f"SNR Improvement: {snr_improvement:.2f} dB (averaged over {N_TRIALS} trials)")
     
+    suppression_amplitude_db, suppression_power_db = evaluator.calculate_artifact_suppression(
+        mixed_data_np, predicted_neural_np, ground_truth_neural
+    )
+    log_and_save(f"\nArtifact Suppression (Amplitude): {suppression_amplitude_db:.2f} dB")
+    log_and_save(f"Artifact Suppression (Power): {suppression_power_db:.2f} dB")
+    
+    from loss import PhysicsLoss
+    criterion = PhysicsLoss(sampling_rate=data_obj.sampling_rate)
+    
+    predicted_neural_tensor_slope = torch.from_numpy(predicted_neural_np).float()
+    ground_truth_neural_tensor_slope = torch.from_numpy(ground_truth_neural).float()
+    
+    spectral_slope_pred_neural = criterion._spectral_slope_loss(predicted_neural_tensor_slope).item()
+    spectral_slope_gt_neural = criterion._spectral_slope_loss(ground_truth_neural_tensor_slope).item()
+    
+    log_and_save(f"\n--- Spectral Slope Loss (Welch) ---")
+    log_and_save(f"GT Neural: {spectral_slope_gt_neural:.6f}")
+    log_and_save(f"Predicted Neural: {spectral_slope_pred_neural:.6f}")
+    
     MSE = np.mean((predicted_neural_np - ground_truth_neural) ** 2)
     log_and_save(f"\nMSE: {MSE:.4f}")
     

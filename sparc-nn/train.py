@@ -242,7 +242,8 @@ def main():
         avg_loss = total_loss / len(data_loader)
         loss_history.append(avg_loss)
         
-        print(f"Epoch [{epoch+1}/{args.epochs}], Loss: {avg_loss:.6f}")
+        if epoch % 100 == 0 and epoch > 0:
+            print(f"Epoch [{epoch+1}/{args.epochs}], Loss: {avg_loss:.6f}")
     
     print("--- Training Complete ---")
     
@@ -389,7 +390,7 @@ def main():
     predicted_artifact_np_plot = predicted_artifact_np[0:1]  # (1, C, T)
     
     # Calculate other metrics using all trials (for consistency with hyperparameter_sweep.py)
-    compute_metrics(
+    metrics = compute_metrics(
         ground_truth_neural=ground_truth_neural,
         ground_truth_artifacts=ground_truth_artifacts,
         predicted_neural_np=predicted_neural_np,
@@ -399,6 +400,18 @@ def main():
         mixed_data_np=mixed_data_np,
         print_results=True
     )
+    
+    # Print spectral slope loss comparison
+    print(f"\n--- Spectral Slope Loss Comparison (Welch) ---")
+    print(f"GT Neural: {metrics['spectral_slope_gt_neural']:.6f}")
+    print(f"Predicted Neural: {metrics['spectral_slope_pred_neural']:.6f}")
+    print(f"GT Artifact: {metrics['spectral_slope_gt_artifact']:.6f}")
+    print(f"Predicted Artifact: {metrics['spectral_slope_pred_artifact']:.6f}")
+    
+    # Print artifact suppression
+    print(f"\n--- Artifact Suppression ---")
+    print(f"Suppression (Amplitude): {metrics['suppression_amplitude_db']:.2f} dB")
+    print(f"Suppression (Power): {metrics['suppression_power_db']:.2f} dB")
     
     # Plot training loss
     fig, ax = plt.subplots(figsize=(10, 6))

@@ -139,6 +139,26 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
     psd_mse = analyzer.calculate_psd_mse(ground_truth_neural, predicted_neural_np)
     coherence_neural = analyzer.calculate_spectral_coherence(ground_truth_neural, predicted_neural_np)
     
+    # Spectral slope loss computation
+    from loss import PhysicsLoss
+    criterion = PhysicsLoss(sampling_rate=evaluator.sampling_rate)
+    
+    predicted_neural_tensor_slope = torch.from_numpy(predicted_neural_np).float()
+    predicted_artifact_tensor_slope = torch.from_numpy(predicted_artifact_np).float()
+    ground_truth_neural_tensor_slope = torch.from_numpy(ground_truth_neural).float()
+    ground_truth_artifact_tensor_slope = torch.from_numpy(ground_truth_artifacts).float()
+    
+    spectral_slope_pred_neural = criterion._spectral_slope_loss(predicted_neural_tensor_slope).item()
+    spectral_slope_pred_artifact = criterion._spectral_slope_loss(predicted_artifact_tensor_slope).item()
+    spectral_slope_gt_neural = criterion._spectral_slope_loss(ground_truth_neural_tensor_slope).item()
+    spectral_slope_gt_artifact = criterion._spectral_slope_loss(ground_truth_artifact_tensor_slope).item()
+    
+    suppression_amplitude_db, suppression_power_db = evaluator.calculate_artifact_suppression(
+        mixed_data_np if mixed_data_np is not None else predicted_neural_np,
+        predicted_neural_np,
+        ground_truth_neural
+    )
+    
     metrics = {
         'snr_before': snr_before,
         'snr_after': snr_after,
@@ -161,6 +181,12 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
         'cosine_similarity_gt': loss_cosine_gt.item(),
         'psd_mse': psd_mse,
         'coherence_neural': coherence_neural,
+        'spectral_slope_pred_neural': spectral_slope_pred_neural,
+        'spectral_slope_pred_artifact': spectral_slope_pred_artifact,
+        'spectral_slope_gt_neural': spectral_slope_gt_neural,
+        'spectral_slope_gt_artifact': spectral_slope_gt_artifact,
+        'suppression_amplitude_db': suppression_amplitude_db,
+        'suppression_power_db': suppression_power_db,
     }
     
     if print_results:
@@ -195,6 +221,16 @@ def compute_metrics(ground_truth_neural, ground_truth_artifacts, predicted_neura
         print(f"\nMinimum Spectral Coherence: {np.min(coherence_neural):.4f} at channel {np.argmin(coherence_neural)}")
         print(f"Maximum Spectral Coherence: {np.max(coherence_neural):.4f} at channel {np.argmax(coherence_neural)}")
         print(f"Median Spectral Coherence: {np.median(coherence_neural):.4f}")
+        
+        print(f"\n--- Spectral Slope Loss (Welch) ---")
+        print(f"GT Neural: {spectral_slope_gt_neural:.6f}")
+        print(f"Predicted Neural: {spectral_slope_pred_neural:.6f}")
+        print(f"GT Artifact: {spectral_slope_gt_artifact:.6f}")
+        print(f"Predicted Artifact: {spectral_slope_pred_artifact:.6f}")
+        
+        print(f"\n--- Artifact Suppression ---")
+        print(f"Suppression (Amplitude): {suppression_amplitude_db:.2f} dB")
+        print(f"Suppression (Power): {suppression_power_db:.2f} dB")
     
     return metrics
 

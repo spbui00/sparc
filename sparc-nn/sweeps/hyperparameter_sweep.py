@@ -146,7 +146,7 @@ def run_training(config, use_uncertainty_loss=False):
     
     uncertainty_loss = None
     if use_uncertainty_loss:
-        uncertainty_loss = UncertaintyWeightedLoss(num_losses=7).to(DEVICE)
+        uncertainty_loss = UncertaintyWeightedLoss(num_losses=5).to(DEVICE)
         optimizer = optim.Adam([
             {'params': model.parameters()},
             {'params': uncertainty_loss.parameters(), 'lr': 1e-3}
@@ -309,6 +309,25 @@ def run_training(config, use_uncertainty_loss=False):
     log_and_save(f"\nSNR Before (Mixed): {snr_before:.2f} dB (averaged over {N_TRIALS} trials)")
     log_and_save(f"SNR After (Cleaned): {snr_after:.2f} dB (averaged over {N_TRIALS} trials)")
     log_and_save(f"SNR Improvement: {snr_improvement:.2f} dB (averaged over {N_TRIALS} trials)")
+    
+    suppression_amplitude_db, suppression_power_db = evaluator.calculate_artifact_suppression(
+        mixed_data_np, predicted_neural_np, ground_truth_neural
+    )
+    log_and_save(f"\nArtifact Suppression (Amplitude): {suppression_amplitude_db:.2f} dB")
+    log_and_save(f"Artifact Suppression (Power): {suppression_power_db:.2f} dB")
+    
+    from loss import PhysicsLoss
+    criterion = PhysicsLoss(sampling_rate=data_obj.sampling_rate)
+    
+    predicted_neural_tensor_slope = torch.from_numpy(predicted_neural_np).float()
+    ground_truth_neural_tensor_slope = torch.from_numpy(ground_truth_neural).float()
+    
+    spectral_slope_pred_neural = criterion._spectral_slope_loss(predicted_neural_tensor_slope).item()
+    spectral_slope_gt_neural = criterion._spectral_slope_loss(ground_truth_neural_tensor_slope).item()
+    
+    log_and_save(f"\n--- Spectral Slope Loss (Welch) ---")
+    log_and_save(f"GT Neural: {spectral_slope_gt_neural:.6f}")
+    log_and_save(f"Predicted Neural: {spectral_slope_pred_neural:.6f}")
     
     MSE = np.mean((predicted_neural_np - ground_truth_neural) ** 2)
     log_and_save(f"\nMSE: {MSE:.4f}")
@@ -504,7 +523,7 @@ def run_training(config, use_uncertainty_loss=False):
 hyperparameter_ranges = {
     'f_cutoff': [0, 10,25, 50],
     'w_cosine': [0, 1, 2],
-    'w_rank_s': [0, 0, 0.2, 0.5],
+    'w_rank_s': [0, 0.2, 0.5],
     'w_spectral': [0, 1,2,3],
     'w_spectral_slope': [0,0.2,0.5,1],
     'w_rank_a': [0, 1,2,3],
